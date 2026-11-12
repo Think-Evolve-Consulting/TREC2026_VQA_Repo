@@ -1,0 +1,65 @@
+[Unit]
+Description=Qwen3.8-27B INT4 vLLM server for the counting-aware Task 2 pass
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/aakash/gemma4
+Environment=PATH=/home/aakash/gemma4/.venv/lib/python3.12/site-packages/nvidia/cu13/bin:/home/aakash/gemma4/.venv/bin:/home/aakash/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# WSL2 GPU-PV exposes no UVA, which the 0.27 V2 model runner requires.
+Environment=VLLM_USE_V2_MODEL_RUNNER=0
+# FlashInfer JIT-compiles its sampler; that variable covers the sampler ONLY.
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+
+# CUDA_HOME is the fix for the failure that cost this run most of an afternoon.
+#
+# A full CUDA 13.3 toolkit ships INSIDE the venv (nvidia/cu13: bin/nvcc,
+# include/cuda_runtime.h, lib, nvvm) but nothing points FlashInfer at it.
+# flashinfer.jit.cpp_ext.get_cuda_path() tries CUDA_HOME, then CUDA_PATH, then
+# `which nvcc`, then /usr/local/cuda -- and under systemd none of the first
+# three resolve, so it raises on a path that does not exist:
+#
+#   RuntimeError: Could not find nvcc and default cuda_home='/usr/local/cuda'
+#
+# That fires when FlashInfer JIT-builds its batch-prefill module on the FIRST
+# REAL REQUEST, not at startup. Without this the server loads, answers
+# /v1/models with 200, passes the client's preflight, and then EngineDeadErrors
+# on every prompt: every pass fails, every query falls back to the official
+# option order, and the run exits 0 looking finished -- i.e. hours spent
+# producing the random control. Verified: the BASELINE config (16384, no extra
+# flags) fails identically without this, so qwen38.run.task2.json could not be
+# reproduced on this box today either.
+Environment=CUDA_HOME=/home/aakash/gemma4/.venv/lib/python3.12/site-packages/nvidia/cu13
+Environment=CUDA_PATH=/home/aakash/gemma4/.venv/lib/python3.12/site-packages/nvidia/cu13
+
+# Two dead ends, recorded so they are not retried:
+#   * VLLM_ATTENTION_BACKEND was REMOVED in 0.27.1 (`from vllm import envs;
+#     envs.VLLM_ATTENTION_BACKEND` -> absent). Setting it is a silent no-op.
+#   * --attention-backend TRITON_ATTN is honoured, but Triton refuses this
+#     checkpoint's FP8 KV cache on SM86 ("FP8 KV cache is not supported by the
+#     Triton attention backend on NVIDIA GeForce RTX 3090"), so it would force
+#     --kv-cache-dtype auto and roughly halve the cache: 84,075 tokens -> ~42k,
+#     3.42x concurrency -> ~1.7x. With CUDA_HOME set, FlashInfer serves fine and
+#     keeps both. So no backend is pinned.
+
+# --max-model-len 24576, not the baseline's 16384: a 12,288-token counting video
+# leaves only ~3,840 tokens for the prompt at 16k, so a transcript-bearing
+# counting query 400s and the ladder halves its budget to 6,144 -- silently
+# undoing the point of the counting variant. Measured at 24576: 17.71 GiB of
+# weights, 84,075 tokens of KV cache, 3.42x concurrency at full length.
+ExecStart=/home/aakash/gemma4/.venv/bin/vllm serve RedHatAI/Qwen3.8-27B-INT4 \
+  --host 0.0.0.0 --port 8011 \
+  --served-model-name RedHatAI/Qwen3.8-27B-INT4 \
+  --allowed-local-media-path /mnt/e/TREC_2026 \
+  --max-model-len 24576 \
+  --gpu-memory-utilization 0.93 \
+  --enforce-eager \
+  --skip-mm-profiling \
+  --media-io-kwargs '{"video": {"num_frames": -1}}'
+Restart=no
+StandardOutput=append:/home/aakash/qwen38.count.server.log
+StandardError=append:/home/aakash/qwen38.count.server.log
+
+[Install]
+WantedBy=default.target

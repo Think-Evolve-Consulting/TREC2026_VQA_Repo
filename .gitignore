@@ -1,0 +1,33 @@
+# Environments and caches
+.venv*/
+__pycache__/
+*.pyc
+.claude/
+
+# Credentials and personal notes - never commit
+cookies.txt
+cookies.json
+SCRATCH_PAD.txt
+NOTES.txt
+.env
+*.key
+
+# Data and outputs (TREC data agreement: test-set videos and derived content stay local)
+videos*/
+frames*/
+transcripts*/
+models/
+logs/
+eval.2025*/
+FINAL RESULTS/
+*.cache.jsonl
+*.jsonl
+*.run.*.json
+*.mp4
+*.wav
+*.zip
+*.xlsx
+*.pdf
+*.docx
+*.exe
+*.dll
