@@ -1,0 +1,1414 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>[hidden]{display:none!important}body{margin:0}</style></head><body>
+<title>Multi-agent debate for VLMs — TREC 2026 VQA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Public+Sans:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a fixed 1280x720 slide stage scaled to fit, with an optional presenter strip below it.
+   Visual idea: a lab instrument readout. Cool paper, deep teal for "measured", rust for "lost", amber for the baseline line. */
+:root{
+  --bg:#EEF1EE; --paper:#FAFBF9; --fg:#15201C; --muted:#5A6863; --line:#CFD7D2; --soft:#E3E9E5;
+  --accent:#1D6B59; --accent-soft:#CFE5DC; --loss:#B8441C; --loss-soft:#F2D9CD; --base:#A8740F; --base-soft:#F1E3C4;
+  --chrome:#DDE3DF;
+  --f-display:"Archivo","Arial Narrow",Helvetica,Arial,sans-serif;
+  --f-body:"Public Sans",system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1513; --paper:#141D1A; --fg:#E6ECE8; --muted:#97A6A0; --line:#2C3A35; --soft:#1C2723;
+  --accent:#5FC2A6; --accent-soft:#1C3A31; --loss:#EE8A63; --loss-soft:#432519; --base:#E2B04F; --base-soft:#3A2E14;
+  --chrome:#0A100E; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0E1513; --paper:#141D1A; --fg:#E6ECE8; --muted:#97A6A0; --line:#2C3A35; --soft:#1C2723;
+  --accent:#5FC2A6; --accent-soft:#1C3A31; --loss:#EE8A63; --loss-soft:#432519; --base:#E2B04F; --base-soft:#3A2E14;
+  --chrome:#0A100E; color-scheme:dark }
+
+html,body{height:100%}
+body{background:var(--chrome);color:var(--fg);font-family:var(--f-body);overflow:hidden}
+*{box-sizing:border-box}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+.viewport{position:fixed;inset:0;display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.stage-wrap{flex:1 1 auto;position:relative;min-height:0}
+.stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%) scale(var(--s,0.5));
+  background:var(--paper);box-shadow:0 1px 0 var(--line),0 20px 60px rgba(0,0,0,.12);overflow:hidden;border-radius:4px}
+
+/* chrome bar */
+.bar{display:flex;align-items:center;gap:8px;padding-block:8px;font:500 12px/1 var(--f-mono);color:var(--muted);flex-wrap:wrap}
+.bar button{font:inherit;color:var(--fg);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:7px 10px;cursor:pointer}
+.bar button:hover{border-color:var(--accent)}
+.bar button[aria-pressed="true"]{background:var(--accent);color:var(--paper);border-color:var(--accent)}
+.bar .spacer{flex:1}
+.progress{height:3px;background:var(--line);border-radius:2px;overflow:hidden;flex:1 1 120px;max-width:280px}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.kbd-hint{white-space:nowrap}
+@media (max-width:700px){.kbd-hint{display:none}}
+
+/* presenter notes strip */
+.notes-panel{flex:0 0 auto;height:38%;min-height:180px;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:16px;
+  background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:14px 18px;margin-bottom:8px}
+.notes-panel .ntext{overflow:auto;min-width:0;font:400 17px/1.55 var(--f-body);max-width:80ch}
+.notes-panel .ntext p{margin:0 0 .7em}
+.notes-panel .ntext b{color:var(--accent)}
+.notes-panel .ntext .cue{font:600 12px/1.4 var(--f-mono);color:var(--base);text-transform:uppercase;letter-spacing:.06em}
+.notes-panel .meta{display:flex;flex-direction:column;gap:10px;font:500 13px/1.3 var(--f-mono);color:var(--muted);border-left:1px solid var(--line);padding-left:16px;min-width:0}
+.clock{font:700 34px/1 var(--f-mono);color:var(--fg);font-variant-numeric:tabular-nums}
+.clock.over{color:var(--loss)}
+.slideclock{font:600 18px/1 var(--f-mono);font-variant-numeric:tabular-nums;color:var(--fg)}
+.slideclock.over{color:var(--loss)}
+.meta .next{color:var(--fg);font-family:var(--f-body);font-size:14px}
+@media (max-width:700px){.notes-panel{grid-template-columns:1fr;height:46%}.notes-panel .meta{border-left:0;padding-left:0;flex-direction:row;flex-wrap:wrap}}
+
+/* overview */
+.overview{position:absolute;inset:0;overflow:auto;background:var(--bg);padding:20px;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;align-content:start;z-index:5}
+.overview button{text-align:left;font:inherit;background:var(--paper);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:12px 14px;cursor:pointer;display:grid;gap:6px}
+.overview button:hover,.overview button.cur{border-color:var(--accent)}
+.overview .on{font:600 11px/1 var(--f-mono);color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+.overview .ot{font:700 16px/1.2 var(--f-display);font-stretch:85%}
+.overview .bk{color:var(--base)}
+
+/* script view */
+.script{position:fixed;inset:0;overflow:auto;background:var(--bg);z-index:20;
+  padding-block:calc(28px + env(safe-area-inset-top,0px)) 60px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.script .inner{max-width:760px;margin:0 auto}
+.script h1{font:800 34px/1.1 var(--f-display);font-stretch:85%;margin:0 0 6px;text-wrap:balance}
+.script .lede{color:var(--muted);margin:0 0 28px;font-size:15px;line-height:1.5}
+.script section{border-top:1px solid var(--line);padding-block:18px;display:grid;gap:8px}
+.script .sh{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.script .sh span{font:600 12px/1 var(--f-mono);color:var(--muted)}
+.script h2{font:700 20px/1.2 var(--f-display);font-stretch:88%;margin:0;text-wrap:balance}
+.script p{margin:0;font-size:16px;line-height:1.6}
+.script b{color:var(--accent)}
+.script .cue{font:600 12px/1.4 var(--f-mono);color:var(--base);text-transform:uppercase;letter-spacing:.06em}
+.script .close{position:sticky;top:0;float:right;font:600 13px/1 var(--f-mono);background:var(--paper);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer}
+.qa dt{font-weight:700;margin-top:14px;font-size:16px}
+.qa dd{margin:4px 0 0;font-size:15.5px;line-height:1.6}
+
+/* ====== slide typography and parts ====== */
+.slide{position:absolute;inset:0;padding:54px 72px 48px;display:none;flex-direction:column;gap:22px;color:var(--fg);background:var(--paper)}
+.slide.active{display:flex}
+.slide > .notes{display:none}
+.slide .eyebrow{font:600 13px/1 var(--f-mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);display:flex;gap:14px}
+.slide .eyebrow .bk{color:var(--base)}
+.slide h2{font:800 46px/1.04 var(--f-display);font-stretch:82%;margin:0;letter-spacing:-.01em;text-wrap:balance;max-width:1050px}
+.slide h2 em{font-style:normal;color:var(--accent)}
+.slide .sub{font:400 22px/1.45 var(--f-body);color:var(--muted);margin:0;max-width:960px}
+.slide .foot{margin-top:auto;display:flex;justify-content:space-between;font:500 12px/1 var(--f-mono);color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+.lbl{font:600 12px/1.2 var(--f-mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font:600 12px/1 var(--f-mono);padding:5px 8px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase}
+.tag.dev{background:var(--soft);color:var(--muted)}
+.tag.off{background:var(--accent-soft);color:var(--accent)}
+.tag.no{background:var(--loss-soft);color:var(--loss)}
+.tag.bl{background:var(--base-soft);color:var(--base)}
+.row{display:flex;gap:28px}
+.grow{flex:1;min-width:0}
+.big{font:800 92px/0.95 var(--f-display);font-stretch:78%;letter-spacing:-.02em}
+.mid{font:800 52px/1 var(--f-display);font-stretch:80%}
+.say{font:600 26px/1.3 var(--f-body);margin:0;max-width:1000px}
+.say em{font-style:normal;color:var(--accent)}
+.small{font-size:17px;line-height:1.5;color:var(--muted);margin:0}
+ul.pts{margin:0;padding:0;list-style:none;display:grid;gap:14px}
+ul.pts li{font-size:21px;line-height:1.4;padding-left:22px;position:relative}
+ul.pts li::before{content:"";position:absolute;left:0;top:.55em;width:9px;height:9px;border:2px solid var(--accent);border-radius:2px}
+.panel{border:1px solid var(--line);border-radius:6px;padding:18px 20px;background:var(--paper)}
+.panel.fill{background:var(--soft);border-color:transparent}
+
+/* builds */
+html.builds .slide [data-f]{transition:opacity .45s ease,transform .45s ease}
+html.builds .slide [data-f]:not(.shown){opacity:0;transform:translateY(10px);pointer-events:none}
+
+/* entry animations (rest state is the final state) */
+@keyframes growX{from{transform:scaleX(0)}}
+@keyframes growY{from{transform:scaleY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.6)}}
+@keyframes draw{from{stroke-dashoffset:var(--len,600)}}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}}
+.slide.active .gx{animation:growX .9s cubic-bezier(.2,.7,.2,1) both;animation-delay:var(--d,0s)}
+.slide.active .pop{animation:popIn .6s cubic-bezier(.2,.7,.2,1.3) both;animation-delay:var(--d,0s)}
+.slide.active .ln{stroke-dasharray:var(--len,600);animation:draw 1.1s ease both;animation-delay:var(--d,0s)}
+.slide.active .rise{animation:rise .6s ease both;animation-delay:var(--d,0s)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* title slide */
+.s-title{justify-content:space-between}
+.s-title h1{font:800 84px/0.98 var(--f-display);font-stretch:76%;letter-spacing:-.02em;margin:0;max-width:1100px;text-wrap:balance}
+.s-title h1 span{color:var(--accent)}
+.chips{display:flex;gap:10px;flex-wrap:wrap}
+.chip{font:600 14px/1 var(--f-mono);padding:10px 12px;border:1px solid var(--line);border-radius:4px;color:var(--muted)}
+.chip.lead{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+/* constraint columns */
+.cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.cols3 .panel h3{font:800 30px/1.05 var(--f-display);font-stretch:82%;margin:0 0 10px}
+.cols3 .panel p{margin:0;font-size:18px;line-height:1.5;color:var(--muted)}
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.strip div{padding:16px 18px;border-left:1px solid var(--line)}
+.strip div:first-child{border-left:0;padding-left:0}
+.strip .v{font:800 40px/1 var(--f-display);font-stretch:80%;display:block;margin-bottom:6px}
+.strip .k{font-size:15px;color:var(--muted);line-height:1.35}
+
+/* protocol flow */
+.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:stretch}
+.step{position:relative;border:1.5px solid var(--line);border-radius:6px;padding:14px 14px 16px;background:var(--paper);display:flex;flex-direction:column;gap:8px}
+.step .sn{font:600 12px/1 var(--f-mono);color:var(--muted)}
+.step .st{font:700 20px/1.15 var(--f-display);font-stretch:88%}
+.step .sd{font-size:14.5px;line-height:1.4;color:var(--muted)}
+.step:not(:last-child)::after{content:"";position:absolute;right:-9px;top:50%;width:8px;height:8px;border-top:2px solid var(--muted);border-right:2px solid var(--muted);transform:translate(0,-50%) rotate(45deg)}
+.step.hot{border-color:var(--accent);background:var(--accent-soft)}
+.ev{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.ev .panel .v{font:800 34px/1 var(--f-display);font-stretch:80%;display:block;margin-bottom:8px}
+.ev .panel p{margin:0;font-size:15.5px;line-height:1.45;color:var(--muted)}
+
+/* dot plot */
+.dots{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;row-gap:12px;column-gap:16px;align-items:center}
+.dots .name{font:600 17px/1.2 var(--f-body);text-align:right}
+.dots .name small{display:block;font:400 12px/1.2 var(--f-mono);color:var(--muted);margin-top:3px}
+.dots .track{position:relative;height:22px}
+.dots .track::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line)}
+.dots .stem{position:absolute;left:0;top:50%;height:3px;margin-top:-1.5px;background:var(--line);transform-origin:left}
+.dots .dot{position:absolute;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:var(--muted)}
+.dots .lead .dot{background:var(--accent);width:20px;height:20px;margin:-10px 0 0 -10px}
+.dots .lead .stem{background:var(--accent-soft)}
+.dots .val{font:600 16px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.dots .lead .val,.dots .lead .name{color:var(--accent)}
+.axis{position:relative;height:24px;grid-column:2}
+.axis span{position:absolute;transform:translateX(-50%);font:500 12px/1 var(--f-mono);color:var(--muted);top:6px}
+.axis span::before{content:"";position:absolute;left:50%;top:-8px;height:5px;width:1px;background:var(--muted)}
+.vline{position:absolute;top:-6px;bottom:-6px;width:0;border-left:2px dashed var(--base)}
+
+/* diverging bars */
+.div{display:grid;grid-template-columns:170px minmax(0,1fr) minmax(0,1fr);row-gap:13px;column-gap:0;align-items:center}
+.div .name{font:600 17px/1 var(--f-body);text-align:right;padding-right:16px}
+.div .l,.div .r{position:relative;height:30px}
+.div .l{border-right:2px solid var(--fg)}
+.div .l i,.div .r i{position:absolute;top:0;bottom:0;display:flex;align-items:center;font:600 14px/1 var(--f-mono);font-style:normal}
+.div .l i{right:0;background:var(--accent);color:var(--paper);justify-content:flex-start;padding-left:8px;transform-origin:right}
+.div .r i{left:0;background:var(--loss);color:var(--paper);justify-content:flex-end;padding-right:8px;transform-origin:left}
+.div .hd{font:600 13px/1.2 var(--f-mono);letter-spacing:.05em;text-transform:uppercase;padding-bottom:4px}
+.div .hd.l{border:0;text-align:right;padding-right:12px;color:var(--accent);height:auto}
+.div .hd.r{text-align:left;padding-left:12px;color:var(--loss);height:auto}
+
+/* horizontal bars of 203 */
+.hb{display:grid;grid-template-columns:330px minmax(0,1fr);row-gap:9px;column-gap:16px;align-items:center}
+.hb .name{font:500 17px/1.2 var(--f-body);text-align:right}
+.hb .name.ctrl{color:var(--muted);font-style:italic}
+.hb .t{position:relative;height:28px}
+.hb .t i{position:absolute;left:0;top:0;bottom:0;background:var(--muted);transform-origin:left;border-radius:0 3px 3px 0}
+.hb .t b{position:absolute;top:50%;transform:translateY(-50%);font:600 15px/1 var(--f-mono);padding-left:8px;font-variant-numeric:tabular-nums}
+.hb .base i{background:var(--base)}
+.hb .judge i{background:var(--accent)}
+.hb .ceil i{background:transparent;border:2px dashed var(--muted)}
+.hb .ctrlb i{background:var(--line)}
+.hb .basebar{position:absolute;top:-4px;bottom:-4px;border-left:2px dashed var(--base)}
+
+/* overrule tokens */
+.flip{display:grid;gap:14px}
+.flip .who{font:700 18px/1.2 var(--f-body)}
+.flip .who span{font:500 14px var(--f-mono);color:var(--muted)}
+.toks{display:flex;flex-wrap:wrap;gap:3px;max-width:520px}
+.toks i{width:13px;height:13px;border-radius:2px;display:block}
+.toks .fx{background:var(--accent)}
+.toks .br{background:var(--loss)}
+.toks .nn{background:var(--line)}
+.legend{display:flex;gap:18px;font:500 13px/1 var(--f-mono);color:var(--muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+/* two-judge columns */
+.cols{display:flex;align-items:flex-end;gap:26px;height:300px;border-bottom:2px solid var(--fg);padding-inline:8px}
+.cols .c{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:8px}
+.cols .c i{width:100%;max-width:110px;background:var(--muted);transform-origin:bottom;border-radius:3px 3px 0 0}
+.cols .c b{font:700 26px/1 var(--f-mono)}
+.cols .c.base i{background:var(--base)} .cols .c.base b{color:var(--base)}
+.cols .c.or i{background:var(--accent)} .cols .c.or b{color:var(--accent)}
+.colnames{display:flex;gap:26px;padding-inline:8px}
+.colnames span{flex:1;text-align:center;font:500 15px/1.25 var(--f-body);color:var(--muted)}
+
+/* debate flow */
+.dflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:22px;align-items:center}
+.node{border:1.5px solid var(--line);border-radius:6px;padding:12px 14px;background:var(--paper);position:relative}
+.node .k{font:600 12px/1 var(--f-mono);color:var(--muted);display:block;margin-bottom:6px}
+.node .t{font:700 17px/1.25 var(--f-body)}
+.node:not(.end)::after{content:"→";position:absolute;right:-19px;top:50%;transform:translateY(-50%);font:700 18px var(--f-mono);color:var(--muted)}
+.node.base{border-color:var(--base);background:var(--base-soft)}
+.node.ok{border-color:var(--accent);background:var(--accent-soft)}
+.forks{display:grid;gap:10px}
+.status{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* counting */
+.meter{display:grid;grid-template-columns:240px minmax(0,1fr) 90px;gap:16px;align-items:center}
+.meter .t{height:44px;background:var(--soft);position:relative;border-radius:3px;overflow:hidden}
+.meter .t i{position:absolute;left:0;top:0;bottom:0;transform-origin:left}
+.meter .name{font:600 19px/1.2 var(--f-body);text-align:right}
+.meter .v{font:700 26px/1 var(--f-mono)}
+
+/* tables */
+table.t{border-collapse:collapse;width:100%;font-size:17px}
+table.t th{font:600 12px/1.2 var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1.5px solid var(--fg)}
+table.t td{padding:9px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+table.t td.n,table.t th.n{text-align:right;font-family:var(--f-mono)}
+table.t tr.us td{background:var(--accent-soft)}
+.pos{color:var(--accent);font-weight:700}
+.neg{color:var(--loss);font-weight:700}
+
+.checklist{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.checklist div{border:1.5px solid var(--accent);border-radius:6px;padding:12px;font:600 16px/1.3 var(--f-body);color:var(--accent);background:var(--accent-soft)}
+
+.s-end{justify-content:center;align-items:flex-start}
+.s-end .big{font-size:150px}
+
+@media print{
+  body{overflow:visible;background:#fff}
+  .viewport{display:none!important}
+  .script{position:static;display:block!important;background:#fff}
+  .script .close{display:none}
+}
+</style>
+
+<div class="viewport" id="vp">
+  <div class="stage-wrap" id="wrap">
+    <div class="stage" id="stage" aria-live="polite">
+
+<style>
+.pipe{display:grid;grid-template-columns:minmax(0,1.25fr) 24px minmax(0,1fr) 24px minmax(0,1fr);gap:0;align-items:stretch}
+.pipe .arrow{display:flex;align-items:center;justify-content:center;font:700 20px var(--f-mono);color:var(--muted)}
+.pipe .col{display:grid;gap:10px;align-content:start}
+.pipe .node{padding:10px 12px}
+.pipe .node .t{font-size:16px}
+.pipe .node .k{margin-bottom:4px}
+.pipe .node::after{content:none}
+.pipe .node.res{border-color:var(--accent);background:var(--accent-soft)}
+.gb{display:grid;grid-template-columns:120px minmax(0,1fr);row-gap:16px;column-gap:16px;align-items:center}
+.gb .name{font:700 18px/1.2 var(--f-body);text-align:right}
+.gb .g{display:grid;gap:4px}
+.gb .t{position:relative;height:20px}
+.gb .t i{position:absolute;left:0;top:0;bottom:0;transform-origin:left;border-radius:0 3px 3px 0}
+.gb .t b{position:absolute;top:50%;transform:translateY(-50%);font:600 13px/1 var(--f-mono);padding-left:8px}
+.gb .a i{background:var(--muted)} .gb .b i{background:var(--accent)} .gb .c i{background:var(--base)}
+.dead{display:grid;grid-template-columns:150px minmax(0,1fr) 150px;gap:14px;align-items:center}
+.dead .name{font:700 18px/1.2 var(--f-body);text-align:right}
+.dead .t{height:30px;background:var(--soft);position:relative;border-radius:3px;overflow:hidden}
+.dead .t i{position:absolute;left:0;top:0;bottom:0;transform-origin:left}
+.dead .v{font:600 15px/1.2 var(--f-mono)}
+table.t.tight td{padding:7px 9px;font-size:16px}
+table.t .rk{color:var(--muted);font-size:13px}
+.lessons{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.lessons .panel h3{font:800 24px/1.1 var(--f-display);font-stretch:84%;margin:0 0 8px}
+.lessons .panel p{margin:0;font-size:16px;line-height:1.45;color:var(--muted)}
+ol.next{margin:0;padding:0;list-style:none;display:grid;gap:12px;counter-reset:n}
+ol.next li{counter-increment:n;display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:baseline;font-size:20px;line-height:1.4}
+ol.next li::before{content:counter(n);font:700 22px/1 var(--f-mono);color:var(--accent)}
+ol.next li span{color:var(--muted);font-size:16px;display:block}
+</style>
+
+<!-- 1 TITLE -->
+
+<!-- 1 TITLE -->
+<section class="slide s-title" data-title="Title" data-time="25">
+  <div class="eyebrow"><span>TREC 2026</span><span>Video Question Answering</span><span>Task 1 · Task 2</span></div>
+  <div style="display:grid;gap:26px">
+    <h1>Multi-agent debate for VLMs: does it <span>survive honest evaluation?</span></h1>
+    <p class="sub">Eight open-weight video models on one consumer GPU, across both TREC 2026 VQA tasks: five ways of combining them, and one we built but could not yet measure.</p>
+  </div>
+  <div style="display:grid;gap:22px">
+    <div class="chips">
+      <span class="chip lead pop" style="--d:.1s">Qwen3.8-27B</span>
+      <span class="chip pop" style="--d:.16s">Qwen3-VL-8B</span>
+      <span class="chip pop" style="--d:.22s">InternVL3.5-30B-A3B</span>
+      <span class="chip pop" style="--d:.28s">Muse Glimmer 30B</span>
+      <span class="chip pop" style="--d:.34s">VideoLLaMA3-7B</span>
+      <span class="chip pop" style="--d:.40s">Gemma 4 12B</span>
+      <span class="chip pop" style="--d:.46s">LLaVA-Video-7B</span>
+      <span class="chip pop" style="--d:.52s">Cosmos-Reason2-2B</span>
+    </div>
+    <div class="foot" style="margin-top:0"><span>Aakash Gupta · ThinkEvolve Consulting · [Team ID]</span><span>Notebook paper: “Measure Before You Ship”</span></div>
+  </div>
+  <aside class="notes">
+    <p>Hi, I'm Aakash Gupta, from ThinkEvolve Consulting.</p>
+    <p>The question in the title is one I think most people in this room have asked at some point. You've got several models watching a video, they disagree about the answer, and the obvious thought is: get them to vote. Or argue it out. Surely that beats just picking one.</p>
+    <p>We spent about five weeks finding out, on one graphics card, with open models, across both tasks of the track.</p>
+    <p>I'll do the system and the answer-generation task first, because that's where our habit of measuring everything came from, and then give the second half of the talk to the debate question itself.</p>
+  </aside>
+</section>
+
+<!-- 2 WHAT WE HAD, AND WHAT WORRIED ME -->
+<section class="slide" data-title="What we had, and what worried me" data-time="45">
+  <div class="eyebrow"><span>Setup</span></div>
+  <h2>The dominant risk was not a weak model. It was a <em>silent failure.</em></h2>
+  <div class="cols3">
+    <div class="panel rise" style="--d:.05s"><h3>One GPU</h3><p>An RTX 3090, 22.7 GiB usable. No two models fit at once, so every “agent” is a sequential pass with a teardown and reload in between.</p></div>
+    <div class="panel rise" style="--d:.15s"><h3>Open weights, local</h3><p>No hosted APIs. One larger model was rejected because it could only run through an API, which would have sent track data to a third party.</p></div>
+    <div class="panel rise" style="--d:.25s"><h3>Little time</h3><p>Answer generation closed 17 August 2026; multiple choice closed 18 September.</p></div>
+  </div>
+  <div class="panel fill" data-f>
+    <p class="say">A run that <em>completes, validates and is wrong</em>: a model answering with no video attached, a frame budget silently disabled, a dev query scored against the wrong year's questions.</p>
+    <p class="small" style="margin-top:10px">Rule: no component entered a submission without a measured gain on labelled 2025 data, under a test fixed before the numbers were read. One exception, the answer-generation ensemble, and we'll see how it turned out.</p>
+  </div>
+  <div class="foot"><span>Notebook paper §1, §3</span><span>2</span></div>
+  <aside class="notes">
+    <p>Three constraints, quickly.</p>
+    <p>One graphics card, the consumer kind. Every model we used fills it completely, so they run one at a time, in a queue. When I say multi-agent later on, that is what it means: load a model, run it over everything, save the answers, unload it, load the next one. There is no live conversation anywhere in this.</p>
+    <p>Open models only, nothing hosted, because the data had to stay on our machines. And about five weeks.</p>
+    <p class="cue">Click</p>
+    <p>Given all that, the thing that actually kept me up wasn't that some model would turn out to be weak. It was that a run would finish, pass every check we had, and be wrong anyway.</p>
+    <p>All three of the examples on this slide happened to us.</p>
+    <p>So we made a rule. Nothing gets submitted unless we have measured that it helps, against a standard we wrote down before looking at the result. We broke that rule once, near the deadline, and I'll show you what it cost.</p>
+  </aside>
+</section>
+
+<!-- 3 THE DATA, AND A CHANGE IN THE SCORING -->
+<section class="slide" data-title="The data, and a change in the scoring" data-time="45">
+  <div class="eyebrow"><span>Setup · data</span></div>
+  <h2>We developed on 2025 labels. <em>2026 is a different shape.</em></h2>
+  <div class="strip">
+    <div><span class="v num">2,443</span><span class="k">questions on 1,956 videos, same set for both tasks</span></div>
+    <div><span class="v num">81%</span><span class="k">of MC questions have 8 options</span></div>
+    <div><span class="v num">38.7%</span><span class="k">of query-weighted footage comes from 3.35% of videos (ten films)</span></div>
+    <div><span class="v num">23.6%</span><span class="k">of questions need audio; 34 languages detected</span></div>
+  </div>
+  <div class="row" style="gap:22px;align-items:stretch">
+    <div class="panel grow">
+      <table class="t tight">
+        <thead><tr><th></th><th>Task 1 dev</th><th>Task 2 dev</th><th>2026 test</th></tr></thead>
+        <tbody>
+          <tr><td>Queries</td><td class="num">150</td><td class="num">400</td><td class="num">2,443</td></tr>
+          <tr><td>Clips over 60 s</td><td class="num">0%</td><td class="num">0%</td><td class="num">17.4%</td></tr>
+          <tr><td>Options per MC query</td><td>—</td><td class="num">4</td><td>mostly 8</td></tr>
+          <tr><td>Routing</td><td>on</td><td>off</td><td>on</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel grow" data-f style="border-color:var(--base)">
+      <div class="lbl" style="color:var(--base)">The detail that shaped Task 1</div>
+      <p class="say" style="font-size:22px;margin-top:10px">The 2025 scorer averages <b>all ten</b> answers, so order never matters. The 2026 headline metrics score <b>rank 1 only</b>.</p>
+    </div>
+  </div>
+  <div class="foot"><span>Zero video overlap between 2025 dev and 2026 test · Notebook paper §2</span><span>3</span></div>
+  <aside class="notes">
+    <p>Both tasks, same 2,443 questions.</p>
+    <p>One thing about the videos that shaped a lot of our decisions. Ten feature films are 3% of the files and nearly 40% of the footage. So a handful of very long videos are most of the actual work.</p>
+    <p>Every correct answer we had to develop against came from last year. 150 questions for the writing task, 400 for multiple choice. Short clips only. Four options instead of eight. Hold on to that one, because it comes back at the end of the talk.</p>
+    <p class="cue">Click</p>
+    <p>And then there's this, which is easy to miss and cost us a lot. Last year's scoring script averages across all ten of your answers, so the order you put them in genuinely does not matter. This year, only the first one counts.</p>
+  </aside>
+</section>
+
+<!-- 4 HOW THE SYSTEM WORKS -->
+<section class="slide" data-title="How the system works" data-time="45">
+  <div class="eyebrow"><span>Setup · system</span></div>
+  <h2>Compute the shared inputs once, then serve <em>one model at a time</em></h2>
+  <div class="pipe">
+    <div class="col">
+      <div class="lbl">Shared preprocessing, cached</div>
+      <div class="node rise" style="--d:0s"><span class="k">ASR × 2</span><span class="t">SenseVoice + Whisper large-v3, language chosen by a duration-weighted sweep</span></div>
+      <div class="node rise" style="--d:.1s"><span class="k">Frames</span><span class="t">8–32 per video, [mm:ss] labelled: 26,250 frames in 6.1 min</span></div>
+      <div class="node rise" style="--d:.2s"><span class="k">Paraphrases</span><span class="t">10 per question, type-preserving</span></div>
+      <div class="node rise" style="--d:.3s"><span class="k">Router</span><span class="t">6 independent text-only agents: vision, audio, OCR, temporal, inference, type</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col">
+      <div class="lbl">Answer generation</div>
+      <div class="node rise" style="--d:.4s"><span class="k">Pass A</span><span class="t">Gemma 4 12B · frames + transcript · 10 calls × 3 answers</span></div>
+      <div class="node rise" style="--d:.5s"><span class="k">Pass B</span><span class="t">Qwen3-VL-8B · native video · routed · 1 call × 10</span></div>
+      <div class="node rise" style="--d:.6s"><span class="k">Pass C</span><span class="t">Cosmos-Reason2-2B · native video · 1 call × 10</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col">
+      <div class="lbl">Multiple choice</div>
+      <div class="node rise" style="--d:.7s"><span class="k">8 rankers</span><span class="t">Rank option numbers · 3 permuted passes · Borda</span></div>
+      <div class="node res rise" style="--d:.8s"><span class="k">Best</span><span class="t">Qwen3.8-27B INT4</span></div>
+    </div>
+  </div>
+  <div class="panel fill" data-f><p class="small" style="color:var(--fg)"><b>Self-reported confidence carried no information.</b> 96.9% of 14,100 router judgements came back at exactly 1.0, none below 0.7. The original design's “debate when confidence &lt; 0.85” trigger could never fire.</p></div>
+  <div class="foot"><span>vLLM, llama.cpp and Ollama on one card; every swap checks VRAM was actually freed</span><span>4</span></div>
+  <aside class="notes">
+    <p>Here's the whole thing, quickly.</p>
+    <p>Anything that doesn't depend on which model is answering, we compute once and save. Two speech-to-text systems. Frames from the video. Ten reworded versions of every question. And a component that works out what each question actually needs: video or not, audio or not, how many frames.</p>
+    <p>One trap in there worth your time. The standard speech setup decides what language a video is in from the first thirty seconds, which is very often a title card with no speech in it at all. So we sample several points through the video instead, weighted by how long each stretch is. Before we did that, a two-second clip misheard as Welsh was outvoting a six-minute English documentary.</p>
+    <p>Then the models run one at a time. Three for the writing task, eight for multiple choice.</p>
+    <p class="cue">Click</p>
+    <p>And this is the first of about four places where asking a model how confident it was turned out to be worthless. It said completely confident, almost every single time.</p>
+  </aside>
+</section>
+
+<!-- 5 HOW WE TESTED -->
+<section class="slide" data-title="How we tested" data-time="50">
+  <div class="eyebrow"><span>Setup · method</span></div>
+  <h2>Six checks that make the <em>negative results</em> trustworthy</h2>
+  <div class="flow">
+    <div class="step hot rise" style="--d:0s"><span class="sn">1</span><span class="st">Scorer parity</span><span class="sd">matches the 2025 official scripts query by query</span></div>
+    <div class="step rise" style="--d:.1s"><span class="sn">2</span><span class="st">Oracle and null controls</span><span class="sd">random ranker 0.253 vs theory 0.250</span></div>
+    <div class="step rise" style="--d:.2s"><span class="sn">3</span><span class="st">Paired tests</span><span class="sd">Wilcoxon, sign, exact McNemar</span></div>
+    <div class="step rise" style="--d:.3s"><span class="sn">4</span><span class="st">Pre-registered gates</span><span class="sd">rule written before reading</span></div>
+    <div class="step rise" style="--d:.4s"><span class="sn">5</span><span class="st">Nested CV</span><span class="sd">for any configuration search</span></div>
+    <div class="step rise" style="--d:.5s"><span class="sn">6</span><span class="st">Silent-failure guards</span><span class="sd">every pass reports videos attached</span></div>
+  </div>
+  <div class="row" style="gap:18px">
+    <div class="panel grow" data-f><span class="mid num">3.0 pts</span><p class="small" style="margin-top:8px">between two <i>random</i> MC runs (p = 0.36). At n = 400, about 4.5 points is resolvable.</p></div>
+    <div class="panel grow" data-f><span class="mid num">0.924</span><p class="small" style="margin-top:8px">METEOR of ground truth scored against itself. The ceiling is not 1.0.</p></div>
+    <div class="panel grow" data-f style="border-color:var(--loss)"><div class="lbl" style="color:var(--loss)">The gap we could not close</div><p class="small" style="margin-top:8px;color:var(--fg)">The official STS metric calls a 2013 web service that no longer responds. Dev measured METEOR and BERTScore only.</p></div>
+  </div>
+  <div class="foot"><span>Notebook paper §5</span><span>5</span></div>
+  <aside class="notes">
+    <p>Most of what follows is a negative result, so the method is doing a lot of work here. Give me forty seconds on it.</p>
+    <p>Our scoring code reproduces the official scoring question by question, so we knew we weren't quietly measuring something slightly different.</p>
+    <p>Everything ran next to a dummy. One that answers at random, one that's handed the right answer. If the random one ever scores well, your test is broken and you want to find that out early. Ours came out at 25.3% where chance is 25, so we trusted the rest.</p>
+    <p>We wrote down what success looked like before we read anything. That sounds obvious. It isn't, when you're tired and the number is close and you really want it to be the number.</p>
+    <p>And every run reports how many questions it answered with the video actually attached. Not how many it answered. How many it answered properly.</p>
+    <p class="cue">Click</p>
+    <p>Why go to all this trouble? Because two runs answering completely at random differed from each other by three points. So anything under about four and a half points, at 400 questions, we simply cannot see.</p>
+    <p class="cue">Click</p>
+    <p>One gap, and it matters later. There is an official metric we couldn't compute at all. The web service that calculates it has been down for years.</p>
+  </aside>
+</section>
+
+<!-- 6 TASK 1: THREE DESIGNS -->
+<section class="slide" data-title="Task 1: three designs" data-time="45">
+  <div class="eyebrow"><span>Task 1 · answer generation</span><span class="tag off">full 2026 runs · 24,430 slots each</span></div>
+  <h2>Fallback rate tracks the <em>architecture</em>, not the model</h2>
+  <div style="display:grid;gap:14px">
+    <div class="lbl">Dead answer slots filled by fallback text</div>
+    <div class="dead"><span class="name">Gemma 4 (A)</span><div class="t"><i class="gx" style="width:max(.1%,3px);background:var(--accent)"></i></div><span class="v">24 · 0.1%</span></div>
+    <div class="dead"><span class="name">Qwen3-VL (B)</span><div class="t"><i class="gx" style="width:6.53%;background:var(--muted);--d:.15s"></i></div><span class="v">1,596 · 6.5%</span></div>
+    <div class="dead"><span class="name">Cosmos (C)</span><div class="t"><i class="gx" style="width:46.2%;background:var(--loss);--d:.3s"></i></div><span class="v" style="color:var(--loss)">11,289 · 46%</span></div>
+  </div>
+  <div class="row" style="gap:18px;align-items:stretch">
+    <div class="panel grow" data-f><div class="lbl">Why</div><p class="small" style="margin-top:8px;color:var(--fg)">Ten short calls fail independently. One ten-answer call fails as a whole when it truncates or emits malformed JSON.</p></div>
+    <div class="panel grow" data-f><div class="lbl">Dev METEOR · 150 queries</div><p class="small" style="margin-top:8px;color:var(--fg)"><b>Gemma 4 0.148</b> · Qwen3-VL 0.053 · Cosmos 0.033. Every pair p ≈ 0. BERTScore spread only 0.029.</p></div>
+    <div class="panel grow" data-f style="border-color:var(--loss)"><div class="lbl" style="color:var(--loss)">Silent failure</div><p class="small" style="margin-top:8px;color:var(--fg)">Cosmos answered 45% of queries with no video. <span class="num">Video_ID</span> is not a filename; the run validated clean.</p></div>
+  </div>
+  <div class="foot"><span>Notebook paper §6.1–6.2</span><span>6</span></div>
+  <aside class="notes">
+    <p>First task is writing ten answers per question.</p>
+    <p>We tried three approaches. Gemma asks ten separate short questions, the original plus nine rewordings, gets three answers to each, and pools them. The other two get asked for all ten in one go.</p>
+    <p>Now look at the empty slots. Times the model produced nothing usable. Gemma, 24. Qwen3-VL, about 1,600. Cosmos, over 11,000.</p>
+    <p class="cue">Click</p>
+    <p>That gap isn't about which model is cleverer. Ask one big question and it fails, you've lost all ten answers. Ask ten small ones, you lose one.</p>
+    <p>And Cosmos had been answering nearly half its questions with no video attached at all. The filename it was looking for didn't match the file. Nothing errored. It ran, it validated, it produced perfectly reasonable-looking answers. I only found it weeks later because I happened to be printing filenames while writing the next pass.</p>
+  </aside>
+</section>
+
+<!-- 7 WHAT THE METRIC ACTUALLY REWARDS -->
+<section class="slide" data-title="What the metric actually rewards" data-time="45">
+  <div class="eyebrow"><span>Task 1 · what the metric rewards</span><span class="tag dev">dev 2025 · 150 queries · METEOR</span></div>
+  <h2>Contentless padding captured <em>56–62%</em> of the expansion gain</h2>
+  <div class="row" style="gap:36px;align-items:center">
+    <div class="grow">
+      <div class="gb" id="expBars"></div>
+      <div class="legend" style="margin-top:14px;padding-left:136px"><span><i style="background:var(--muted)"></i>A: baseline</span><span><i style="background:var(--accent)"></i>B: LLM expansion</span><span><i style="background:var(--base)"></i>C: mechanical padding</span></div>
+    </div>
+    <div style="width:380px;display:grid;gap:14px">
+      <div class="panel fill"><div class="lbl">The control</div><p class="small" style="margin-top:8px;color:var(--fg)">Same answers, padded to the same length with filler such as “in the video … as it is shown”.</p></div>
+      <div class="panel" data-f style="border-color:var(--accent)"><p class="say" style="font-size:22px">Expansion passed its gate. But on this task <em>METEOR is largely a length-matching measure.</em></p></div>
+      <div class="panel" data-f><p class="small" style="color:var(--fg)">86% of rewrites added a content word the expander could not have seen: “a flip” became “a <i>single</i> flip”.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Ground-truth answers average 8.5 words; ours averaged 3.3–4.9 · Notebook paper §6.3</span><span>7</span></div>
+  <aside class="notes">
+    <p>Our answers were coming out at about half the length of the reference answers. So we used a model to rewrite them longer.</p>
+    <p>And we ran a control, which turned out to be the most useful thing we did on this task. Same answers, padded out to the same length with filler that means nothing. “In the video, as it is shown.” That sort of thing.</p>
+    <p>The rewriting, in green, improves the score for all three models. Good.</p>
+    <p>The meaningless padding, in amber, gets you most of the way there. Somewhere between 56 and 62 percent of the same gain, from adding literally no information.</p>
+    <p class="cue">Click</p>
+    <p>The rewriting still passed our test. It beat the padding, it didn't hurt anything else, so we shipped it. But what we'd really learned was something about the metric. On this task it is mostly measuring length.</p>
+    <p class="cue">Click</p>
+    <p>And the model doing the rewriting can't see the video. So every detail it adds is a guess. 86% of the rewrites invented something.</p>
+  </aside>
+</section>
+
+<!-- 8 TASK 1: THE OFFICIAL RESULTS -->
+<section class="slide" data-title="Task 1: the official results" data-time="50">
+  <div class="eyebrow"><span>Task 1 · official results</span><span class="tag off">official 2026 · human-answer references · 44 runs</span></div>
+  <h2>Expansion did exactly what dev said on METEOR, and <em>lost on STS</em></h2>
+  <div class="row" style="gap:26px;align-items:stretch">
+    <div class="grow" style="min-width:0">
+      <table class="t tight">
+        <thead><tr><th>Run</th><th class="n">STS@1</th><th class="n">METEOR@1</th><th class="n">BERTScore@1</th></tr></thead>
+        <tbody>
+          <tr class="us"><td class="num">gemma4_run01</td><td class="n">0.457 <span class="rk">23</span></td><td class="n">0.176 <span class="rk">39</span></td><td class="n">0.8887 <span class="rk">18</span></td></tr>
+          <tr><td class="num">gemma4_expand_run1</td><td class="n">0.423 <span class="rk">30</span></td><td class="n">0.214 <span class="rk">28</span></td><td class="n">0.8860 <span class="rk">23</span></td></tr>
+          <tr><td class="num">fused_judge_exp_run1</td><td class="n">0.407 <span class="rk">35</span></td><td class="n">0.213 <span class="rk">31</span></td><td class="n">0.8829 <span class="rk">31</span></td></tr>
+          <tr><td class="num">fused_expan_run1</td><td class="n">0.402 <span class="rk">38</span></td><td class="n">0.212 <span class="rk">32</span></td><td class="n">0.8827 <span class="rk">32</span></td></tr>
+          <tr><td class="num">qwen3vl_expand_run2</td><td class="n">0.362 <span class="rk">44</span></td><td class="n">0.168 <span class="rk">43</span></td><td class="n">0.8802 <span class="rk">36</span></td></tr>
+          <tr><td><i>field median</i></td><td class="n">0.458</td><td class="n">0.234</td><td class="n">0.8860</td></tr>
+        </tbody>
+      </table>
+      <p class="small" style="margin-top:8px">Small grey numbers are ranks among 44 runs.</p>
+    </div>
+    <div style="width:390px;display:grid;gap:12px">
+      <div class="panel" data-f><div class="lbl">Expansion, official vs dev</div><p class="small" style="margin-top:8px;color:var(--fg)">METEOR@1 <span class="pos">+0.038</span> (dev predicted +0.039)<br>STS@1 <span class="neg">−0.035</span> (not computable on dev)</p></div>
+      <div class="panel" data-f><div class="lbl">Ensemble, gate skipped</div><p class="small" style="margin-top:8px;color:var(--fg)">Trails single Gemma on every @1 metric, as the post-hoc dev gate showed (0.133 vs 0.148, p = 0.041).</p></div>
+      <div class="panel" data-f style="border-color:var(--accent)"><div class="lbl">Ten answers vs the first</div><p class="small" style="margin-top:8px;color:var(--fg)">gemma4_run01 STS: <b>23rd</b> at @1, <b>9th</b> at Best@10. We filled ten good slots and never learned to choose the first.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Human + alternative references raise every score ≈0.02–0.03, same order · Notebook paper §6.7–6.8</span><span>8</span></div>
+  <aside class="notes">
+    <p>Official results, first task.</p>
+    <p>The ordering held up. Gemma beat the others on every metric, just as our testing said it would. Our run without the rewriting is actually our best one on two of the three.</p>
+    <p class="cue">Click</p>
+    <p>The rewriting improved the metric we could measure by 0.038. We had predicted 0.039, so that prediction was good. And on the metric we couldn't compute, it made us 0.035 worse.</p>
+    <p>We'd pushed up the number we could see by pushing down a number we couldn't. Which is completely obvious now and was not at all obvious in September.</p>
+    <p class="cue">Click</p>
+    <p>Then the ensemble. That's the one we shipped without testing properly. It sits behind our single best model on everything. We ran the test afterwards, out of curiosity, and it would have told us not to submit it.</p>
+    <p class="cue">Click</p>
+    <p>And this last one still bothers me. Score our best of ten answers: 9th out of 44. Score just our first answer: 23rd. We spent weeks filling all ten slots well, because that's what our scorer rewarded. The official scoring reads the first one and stops.</p>
+  </aside>
+</section>
+
+<!-- 9 TASK 2: THE PANEL -->
+<section class="slide" data-title="Task 2: the panel" data-time="40">
+  <div class="eyebrow"><span>Task 2 · the panel</span><span class="tag dev">dev 2025 · Top-1 · n = 400</span></div>
+  <h2>Eight rankers under one shared contract. <em>One clear leader.</em></h2>
+  <div class="row" style="gap:40px">
+    <div class="grow">
+      <div class="dots" id="panelDots"></div>
+      <p class="small" style="margin-top:10px">Random control: 0.253, off this scale. Muse Glimmer failed its gate and never ran on 2026.</p>
+    </div>
+    <div style="width:330px;display:grid;gap:14px;align-content:start">
+      <div class="panel fill"><div class="lbl">Shared contract</div><p class="small" style="margin-top:8px;color:var(--fg)">Rank option numbers, never text. Three passes per question (official, reversed, shuffled), combined by Borda. Position bias at chance.</p></div>
+      <div class="panel" data-f><div class="lbl">Task rank does not transfer</div><p class="small" style="margin-top:8px;color:var(--fg)">Gemma 4 won Task 1 outright and is second-worst here.</p></div>
+      <div class="panel" data-f><div class="lbl">Size barely predicts</div><p class="small" style="margin-top:8px;color:var(--fg)">Qwen3-VL-8B sits within a point of the 27B leader on dev.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Notebook paper §7.1–7.2</span><span>9</span></div>
+  <aside class="notes">
+    <p>Second task. Pick the right answer from a list. This is the panel: eight models, same job.</p>
+    <p>They all play by the same rules. They rank the option numbers rather than the text, so nobody wins by writing a nicer sentence. Every question gets asked three times with the options in different orders and we combine those. We checked whether any of them just liked picking the first option. None of them did.</p>
+    <p>Qwen3.8 is in front at 80%. Qwen3-VL about a point back. Then there's a drop.</p>
+    <p class="cue">Click</p>
+    <p>Two things in here surprised us. Gemma won the task I've just been talking about, and here it's second from bottom, so being good at one of these says nothing about the other. And size barely tells you anything: an 8-billion model is level with a 27-billion one.</p>
+    <p>One more thing, and it leads into the next slide. Every time we chased down a big gap between two models, it turned out to be something broken in how we were running them. Not the model being worse at seeing.</p>
+  </aside>
+</section>
+
+<!-- 10 THINGS THAT BROKE QUIETLY -->
+<section class="slide" data-title="Things that broke quietly" data-time="40">
+  <div class="eyebrow"><span>Engineering · silent failures</span></div>
+  <h2>Each of these produced output that <em>looked valid</em></h2>
+  <table class="t tight">
+    <thead><tr><th>Failure</th><th>How it presented</th><th>How it was caught</th></tr></thead>
+    <tbody>
+      <tr class="rise" style="--d:0s"><td>Qwen <span class="num">longest_edge</span> is a whole-video pixel budget, not per frame</td><td>Task 1 Qwen3-VL saw thumbnails: 485 visual tokens vs 17,792 planned</td><td>token-count sweep</td></tr>
+      <tr class="rise" style="--d:.08s"><td>Frame sampling rejected on short clips, error swallowed</td><td>Cosmos answered 23% of queries blind</td><td>counting videos actually used</td></tr>
+      <tr class="rise" style="--d:.16s"><td>llama.cpp tiles each frame into 448-px crops</td><td>InternVL: every request HTTP 400</td><td>resize to one tile per frame</td></tr>
+      <tr class="rise" style="--d:.24s"><td>Windows spills VRAM to system RAM instead of OOM</td><td>100% GPU, zero progress, no error</td><td>“busy but no output” = memory</td></tr>
+      <tr class="rise" style="--d:.32s"><td>2025/2026 query IDs overlap numerically</td><td>a run that completes, validates, means nothing</td><td>static path-flag guard</td></tr>
+      <tr class="rise" style="--d:.40s"><td>Dead server: every query falls back</td><td>a file identical to the baseline, exit 0</td><td>abort after 10 consecutive fallbacks</td></tr>
+    </tbody>
+  </table>
+  <p class="say" data-f style="font-size:22px">An unattended run is a different environment from an interactive one. <em>Make every pass report its own evidence.</em></p>
+  <div class="foot"><span>Twelve in the paper · Notebook paper §7.3, §9</span><span>10</span></div>
+  <aside class="notes">
+    <p>Six of the twelve in the paper. Every one of these ran to completion and passed validation.</p>
+    <p>There's a setting controlling how much visual detail the model gets. We assumed it was per frame. It's for the whole video. So on long clips our model was effectively looking at thumbnails: 485 visual tokens where we'd planned for nearly eighteen thousand.</p>
+    <p>An error getting swallowed meant another model answered with no video.</p>
+    <p>And this one is my favourite. On Windows, if you ask for more graphics memory than you have, it doesn't fail. It quietly starts using system memory instead. So the card sits at 100%, the fans spin up, everything looks like it's working, and absolutely nothing is happening. We watched that for over ten minutes before anyone said anything.</p>
+    <p class="cue">Click</p>
+    <p>Nearly all of these got caught the same way. Every run counts its own evidence: videos attached, fallbacks used, input sizes. Boring, and it found almost everything.</p>
+  </aside>
+</section>
+
+<!-- 11 CAN COMBINING BEAT THE BEST MODEL? -->
+<section class="slide" data-title="Can combining beat the best model?" data-time="35">
+  <div class="eyebrow"><span>Can combining win?</span></div>
+  <h2>Can any way of combining a VLM panel beat its <em>best single member?</em></h2>
+  <div class="row" style="align-items:stretch;margin-top:6px">
+    <div class="panel grow" data-f>
+      <div class="lbl">Best single model · Qwen3.8-27B INT4</div>
+      <div class="row" style="gap:40px;align-items:flex-end;margin-top:14px">
+        <div><span class="tag dev">dev 2025</span><div class="big num" style="margin-top:10px">0.800</div></div>
+        <div style="font:700 40px var(--f-mono);color:var(--muted);padding-bottom:16px">→</div>
+        <div><span class="tag off">official 2026</span><div class="big num" style="margin-top:10px;color:var(--accent)">0.803</div></div>
+      </div>
+      <p class="small" style="margin-top:14px">Top-1. Field median 0.8015. 20th of 42 runs; 15th on MRR (0.877).</p>
+    </div>
+    <div class="grow" style="display:grid;gap:18px">
+      <div class="panel fill" data-f><span class="tag no">Measured</span><p class="say" style="margin-top:10px">Five combination methods. <em style="color:var(--loss)">None beat it.</em> Two were confirmed on the official test set.</p></div>
+      <div class="panel" data-f><span class="tag bl">Built, not measured</span><p class="say" style="margin-top:10px">Debate. What we can measure is its headroom: about 17 dev questions.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Dev = 2025 ground truth, 400 queries · Official = NIST 2026, 2,428 scored queries</span><span>11</span></div>
+  <aside class="notes">
+    <p>Right. Second half of the talk, and it's the question from the title. We now have eight models that have all watched the same videos and often disagree. Can any way of combining them beat just using the best one?</p>
+    <p>I'll give you the answer now rather than make you wait for it.</p>
+    <p class="cue">Click</p>
+    <p>Our best single model got 80% right on our own questions and 80.3 on the official set. I'll come back to how that prediction held up.</p>
+    <p class="cue">Click</p>
+    <p>Then we tried five different ways of combining it with the other seven models. None of them beat it. Not one.</p>
+    <p class="cue">Click</p>
+    <p>And debate itself: we built the whole thing, and then couldn't run it. So I'm claiming nothing for debate. What I can tell you is how much room there is for it to help, and where there's none at all.</p>
+  </aside>
+</section>
+
+<!-- 12 WE TRIED 781,000 COMBINATIONS -->
+<section class="slide" data-title="We tried 781,000 combinations" data-time="50">
+  <div class="eyebrow"><span>Methods 1–3 · Voting and rank fusion</span><span class="tag dev">dev 2025 · Top-1</span></div>
+  <h2>We searched <em class="num">781,248</em> fusions. Under nested CV the best one is the baseline.</h2>
+  <div class="row" style="gap:40px;align-items:flex-start">
+    <div class="grow">
+      <div class="dots" id="fusionDots"></div>
+      <div class="legend" style="margin-top:16px;padding-left:216px"><span><i style="background:var(--base)"></i>dashed: Qwen3.8 alone, 0.800</span></div>
+    </div>
+    <div style="width:360px;display:grid;gap:14px">
+      <div class="panel fill"><div class="lbl">The search</div><p class="small" style="margin-top:8px;color:var(--fg)">Every subset of 8 runs × integer weights 0–4, under RRF and Borda. Pick the best on 9 folds, score the 10th, 20 random splits.</p></div>
+      <div class="panel" data-f style="border-color:var(--loss)"><p class="say" style="font-size:23px">The entire in-sample gain was <span style="color:var(--loss)">search optimism.</span></p><p class="small" style="margin-top:8px">9 of 20 CV repeats above baseline, median p = 0.87.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Notebook paper §7.4</span><span>12</span></div>
+  <aside class="notes">
+    <p>The first three attempts were all versions of voting.</p>
+    <p>Weight each model by how good it is and combine them: ties with just using the best one. Give them all equal say: three and a half points worse.</p>
+    <p>At that point we got stubborn. Every possible group of models, every weighting we could give them. Around 781,000 combinations.</p>
+    <p>Best one came out at 82.5% against 80 for the single model. Which looked great, for about a day.</p>
+    <p class="cue">Click</p>
+    <p>Because if you try 781,000 things, some of them are going to look good by accident. So we did it properly: pick the winner using most of the questions, then score it on the ones you deliberately kept back.</p>
+    <p>80.1%. Same as the single model. There was never anything there. We'd just found whichever combination got lucky on the questions we happened to be looking at.</p>
+  </aside>
+</section>
+
+<!-- 13 WHY IT DOESN'T WORK -->
+<section class="slide" data-title="Why it doesn't work" data-time="45">
+  <div class="eyebrow"><span>Diagnosis</span><span class="tag dev">dev 2025 · 400 queries</span></div>
+  <h2>Every model loses more questions to the leader than it wins</h2>
+  <div class="row" style="gap:44px;align-items:center">
+    <div class="grow">
+      <div class="div" id="wl"></div>
+    </div>
+    <div style="width:340px;display:grid;gap:16px">
+      <div class="panel fill"><div class="lbl">Oracle over all eight</div><div class="mid num" style="margin-top:8px">93.5%</div><p class="small" style="margin-top:6px">of questions have at least one model ranking the right answer first.</p></div>
+      <div class="panel" data-f style="border-color:var(--accent)"><p class="say" style="font-size:23px">There is <em>no majority to harvest</em>. Voting mixes in more error than it removes.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Counts relative to Qwen3.8-27B · Notebook paper §7.4</span><span>13</span></div>
+  <aside class="notes">
+    <p>So why doesn't it work? This chart is the one thing I'd like you to take away from the talk.</p>
+    <p>For each model, green is the questions where that model is right and our best model is wrong. Red is the other way round.</p>
+    <p>Now, somewhere in that panel at least one model has the right answer 93% of the time. So collectively, they know. That's what makes you think voting ought to work.</p>
+    <p>But look at the bars. Every single one of them loses more than it wins. Best case is Qwen3-VL: 29 wins, 33 losses. Worst is Cosmos, 26 against 86.</p>
+    <p class="cue">Click</p>
+    <p>When that's the shape of it, voting just drags in more wrong answers than right ones. And the thing is, this is one table. You can work it out in an afternoon, before you build anything. I wish we'd made it first.</p>
+  </aside>
+</section>
+
+<!-- 14 A JUDGE THAT RE-WATCHES -->
+<section class="slide" data-title="A judge that re-watches" data-time="50">
+  <div class="eyebrow"><span>Methods 4–5 · Arbitration</span><span class="tag dev">dev 2025 · 203 disputed queries</span></div>
+  <h2>A judge that re-watched the video was active, and <em>a coin flip</em></h2>
+  <div class="row" style="gap:40px;align-items:flex-start">
+    <div class="grow">
+      <div class="lbl" style="margin-bottom:10px">Correct of the 203 questions where the panel disagreed on rank 1</div>
+      <div class="hb" id="judgeBars"></div>
+    </div>
+    <div style="width:420px;display:grid;gap:18px" data-f>
+      <div class="lbl">Overrules of the baseline</div>
+      <div class="flip" id="flips"></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>became right</span><span><i style="background:var(--loss)"></i>became wrong</span><span><i style="background:var(--line)"></i>wrong either way</span></div>
+    </div>
+  </div>
+  <div class="foot"><span>Judge saw 16 frames, every panellist's ranking, and a reliability card · Notebook paper §7.6</span><span>14</span></div>
+  <aside class="notes">
+    <p>Next two attempts: stop voting, and have one model arbitrate instead.</p>
+    <p>There were 203 questions where the panel genuinely disagreed about the best answer. On those, a judge model went back and re-watched sixteen frames, with everyone else's answers in front of it, plus a note about what each of them tends to get wrong.</p>
+    <p>Our best model on its own gets 133 of those right. First judge, 132. Second judge, 130. Majority vote, 129. And the random judge, 73, which is right about where random should land, and that was reassuring.</p>
+    <p class="cue">Click</p>
+    <p>They weren't being timid, by the way. They overruled the best model 39 and 61 times. They were confident.</p>
+    <p>They were also wrong about half the time. One of them fixed 16 answers and broke 17. The other fixed 24 and broke 27. You could have flipped a coin.</p>
+  </aside>
+</section>
+
+<!-- 15 TWO JUDGES -->
+<section class="slide" data-title="Two judges" data-time="35">
+  <div class="eyebrow"><span>Headroom</span><span class="tag dev">dev 2025</span></div>
+  <h2>When two judges disagree, <em>one of them is usually right</em></h2>
+  <div class="row" style="gap:44px;align-items:flex-end">
+    <div class="grow">
+      <div class="lbl" style="margin-bottom:12px">Correct of the 50 queries where the two judges split</div>
+      <div class="cols" id="tj"></div>
+      <div class="colnames"><span>Judge 1</span><span>Judge 2</span><span>Baseline</span><span>Either judge</span></div>
+    </div>
+    <div style="width:400px;display:grid;gap:16px">
+      <div class="panel fill"><div class="lbl">On the other 153, where judges agree</div><p class="small" style="margin-top:6px;color:var(--fg)">112 correct vs the baseline's 109.</p></div>
+      <div class="panel" data-f style="border-color:var(--accent)"><div class="lbl">Oracle over both judges, all 203</div><div class="mid num" style="margin-top:8px">150 <span style="color:var(--muted);font-size:30px">vs 133</span></div><p class="small" style="margin-top:8px">≈17 questions of headroom. A ceiling for picking between two judges, not a result.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Notebook paper §7.6</span><span>15</span></div>
+  <aside class="notes">
+    <p>Now this is the one bit of good news in the whole project.</p>
+    <p>We had two judges, and there were 50 questions where they picked different answers. On those, each judge on its own gets about 20 right. Our original model gets 24, so it beats both of them.</p>
+    <p>But: at least one of the two judges is right 38 times out of 50.</p>
+    <p class="cue">Click</p>
+    <p>So if you could tell which one to believe, you'd go from 133 to 150. That's roughly 17 extra questions.</p>
+    <p>You can't tell. That's the whole problem. But it does mean there's something there: 17 questions where the information exists and we're not getting at it. That's what a debate would be going after.</p>
+  </aside>
+</section>
+
+<!-- 16 A DEBATE THAT CAN'T MAKE THINGS WORSE -->
+<section class="slide" data-title="A debate that can't make things worse" data-time="55">
+  <div class="eyebrow"><span>The debate</span><span class="tag bl">built · verified safe · not run at scale</span></div>
+  <h2>A debate designed so it <em>cannot make the output worse</em></h2>
+  <div class="dflow">
+    <div class="node rise" style="--d:0s"><span class="k">Gate</span><span class="t">Only where the panel disputes rank 1</span></div>
+    <div class="node rise" style="--d:.12s"><span class="k">R0</span><span class="t">Two judges give independent opinions</span></div>
+    <div class="node rise" style="--d:.24s"><span class="k">R1</span><span class="t">Hold or switch, citing frame timestamps</span></div>
+    <div class="node rise" style="--d:.36s"><span class="k">R2</span><span class="t">Answer the opponent's citation</span></div>
+    <div class="forks end">
+      <div class="node ok end rise" style="--d:.5s"><span class="k">Converged</span><span class="t">Emit the agreed answer</span></div>
+      <div class="node base end rise" style="--d:.6s"><span class="k">Deadlock</span><span class="t">Fall back to the baseline, never a judge</span></div>
+    </div>
+  </div>
+  <div class="row" style="gap:22px;align-items:stretch">
+    <div class="panel grow" data-f><div class="lbl">New evidence, not more opinions</div><ul class="pts" style="margin-top:12px"><li style="font-size:18px">32 fresh frames per video, 64 for counting (the panel averaged 14.5)</li><li style="font-size:18px">“Report the maximum count” instruction</li><li style="font-size:18px">CLAP audio scores for 135 sound questions</li></ul></div>
+    <div class="panel grow" data-f><div class="lbl">Safety, verified</div><p class="small" style="margin-top:12px;color:var(--fg)">With two never-conceding mock agents, the output was <b>SHA-256 identical</b> to the baseline run. Also run end to end against the real InternVL judge.</p></div>
+    <div class="panel grow" data-f style="border-color:var(--loss)"><div class="lbl" style="color:var(--loss)">Why no score</div><p class="small" style="margin-top:12px;color:var(--fg)">The Mac-hosted 27B judge could not return one answer in 30 minutes. Cost is ≈2.8 calls per disputed question, vs 3 for the baseline's vote.</p></div>
+  </div>
+  <div class="foot"><span>Design after Du et al. 2023 · Notebook paper §7.6</span><span>16</span></div>
+  <aside class="notes">
+    <p>So we designed one. Three rules, all straight off the last slide.</p>
+    <p>It only runs where the models disagree. Where they agree they're already 95% right, so leave it alone.</p>
+    <p>Two judges answer independently first. Then two rounds where they can hold or change their mind, but they have to point at a specific timestamp in the video when they do. No vague argument.</p>
+    <p>And if they still don't agree, we bin the whole thing and use the original model's answer. Not either judge's. The original. Because on these questions, remember, the original beat both of them.</p>
+    <p class="cue">Click</p>
+    <p>It also gets things the panel never had. More frames: 32 a video instead of about 14, and 64 for counting questions. An instruction to report the maximum count. And sound.</p>
+    <p class="cue">Click</p>
+    <p>And we checked that it can't hurt you. We ran it with two fake agents that refuse to ever concede, so every single question deadlocks, and the output came out byte-for-byte identical to the original run.</p>
+    <p class="cue">Click</p>
+    <p>And then we couldn't run it. We'd put the judge on a Mac and it couldn't finish one question in half an hour. We ran out of machine, basically. So that's where it sits: a design, and a measurement of how much room there is. It is not a result and I'd ask you not to treat it as one.</p>
+  </aside>
+</section>
+
+<!-- 17 WHERE ARGUING CAN'T HELP -->
+<section class="slide" data-title="Where arguing can't help" data-time="35">
+  <div class="eyebrow"><span>Limits</span><span class="tag dev">dev 2025 · Qwen3.8 errors</span></div>
+  <h2>Counting needs <em>evidence</em>, not argument</h2>
+  <div style="display:grid;gap:16px;max-width:1000px">
+    <div class="lbl">Qwen3.8 error rate</div>
+    <div class="meter"><span class="name">Counting questions</span><div class="t"><i class="gx" style="width:43.8%;background:var(--loss)"></i></div><span class="v num" style="color:var(--loss)">43.8%</span></div>
+    <div class="meter"><span class="name">Everything else</span><div class="t"><i class="gx" style="width:16.8%;background:var(--muted);--d:.15s"></i></div><span class="v num">16.8%</span></div>
+    <p class="small" style="padding-left:256px">Exact Fisher test, p = 0.0001, Bonferroni-corrected over ≈28 features.</p>
+  </div>
+  <div class="row" style="gap:22px">
+    <div class="panel grow" data-f><div class="mid num">15 of 18</div><p class="small" style="margin-top:8px">readable misses were undercounts, mean −1.2. Every model undercounts (−0.4 to −1.3).</p></div>
+    <div class="panel grow" data-f><div class="mid num">24 of 38</div><p class="small" style="margin-top:8px">counting questions solved even by an oracle over both judges.</p></div>
+    <div class="panel grow" data-f><div class="mid num">18</div><p class="small" style="margin-top:8px">questions missed only by Qwen3.8: mostly “what can be heard”, asked of audio it never received.</p></div>
+  </div>
+  <div class="foot"><span>Notebook paper §7.5</span><span>17</span></div>
+  <aside class="notes">
+    <p>One place where none of this can possibly work: counting. How many people are in the shot, that kind of question.</p>
+    <p>Our best model gets 44% of counting questions wrong. Everything else, 17%. It's the only question type where the difference is big enough that we're confident about it.</p>
+    <p class="cue">Click</p>
+    <p>And they're almost always undercounts. Every model does it, all of them in the same direction. Even if you could always pick the right judge, you'd get 24 out of 38 on counting.</p>
+    <p>Which makes sense when you think about it. If the frames we handed the model don't actually contain the thing it's meant to count, arguing about those frames isn't going to produce it. So our fix gives it more frames. Not more argument.</p>
+  </aside>
+</section>
+
+<!-- 18 DID OUR TESTING PREDICT REALITY? -->
+<section class="slide" data-title="Did our testing predict reality?" data-time="50">
+  <div class="eyebrow"><span>Held-out check</span><span class="tag dev">dev 2025</span><span class="tag off">official 2026 · 42 runs</span></div>
+  <h2>Our best run transferred within 0.3 points. <em>The dev “tie” did not.</em></h2>
+  <div class="row" style="gap:40px;align-items:center">
+    <div style="width:600px;flex:0 0 auto">
+      <svg viewBox="0 0 600 340" width="600" height="340" role="img" aria-label="Slope chart of dev versus official Top-1 for four submitted runs">
+        <line x1="150" y1="16" x2="150" y2="300" stroke="var(--line)" stroke-width="1"/>
+        <line x1="420" y1="16" x2="420" y2="300" stroke="var(--line)" stroke-width="1"/>
+        <line x1="150" y1="49.75" x2="420" y2="49.75" stroke="var(--base)" stroke-width="2" stroke-dasharray="6 5"/>
+        <text x="150" y="324" text-anchor="middle" fill="var(--muted)" font-family="JetBrains Mono,monospace" font-size="13">DEV 2025</text>
+        <text x="420" y="324" text-anchor="middle" fill="var(--muted)" font-family="JetBrains Mono,monospace" font-size="13">OFFICIAL 2026</text>
+        <g font-family="JetBrains Mono,monospace" font-size="14">
+          <line class="ln" style="--len:300;--d:.0s" x1="150" y1="55" x2="420" y2="45.6" stroke="var(--accent)" stroke-width="4"/>
+          <line class="ln" style="--len:300;--d:.15s" x1="150" y1="72.5" x2="420" y2="108.9" stroke="var(--muted)" stroke-width="3"/>
+          <line class="ln" style="--len:300;--d:.3s" x1="150" y1="90" x2="420" y2="217" stroke="var(--loss)" stroke-width="4"/>
+          <line class="ln" style="--len:300;--d:.45s" x1="150" y1="195" x2="420" y2="264.7" stroke="var(--muted)" stroke-width="3"/>
+          <circle cx="150" cy="55" r="6" fill="var(--accent)"/><circle cx="420" cy="45.6" r="6" fill="var(--accent)"/>
+          <circle cx="150" cy="72.5" r="5" fill="var(--muted)"/><circle cx="420" cy="108.9" r="5" fill="var(--muted)"/>
+          <circle cx="150" cy="90" r="6" fill="var(--loss)"/><circle cx="420" cy="217" r="6" fill="var(--loss)"/>
+          <circle cx="150" cy="195" r="5" fill="var(--muted)"/><circle cx="420" cy="264.7" r="5" fill="var(--muted)"/>
+          <text x="138" y="60" text-anchor="end" fill="var(--accent)" font-weight="600">qwen38 .800</text>
+          <text x="138" y="77.5" text-anchor="end" fill="var(--muted)">fused .795</text>
+          <text x="138" y="95" text-anchor="end" fill="var(--loss)" font-weight="600">qwen3vl .790</text>
+          <text x="138" y="200" text-anchor="end" fill="var(--muted)">internvl .760</text>
+          <text x="432" y="50.6" fill="var(--accent)" font-weight="600">.8027</text>
+          <text x="432" y="113.9" fill="var(--muted)">.7846</text>
+          <text x="432" y="222" fill="var(--loss)" font-weight="600">.7537</text>
+          <text x="432" y="269.7" fill="var(--muted)">.7401</text>
+        </g>
+      </svg>
+      <div class="legend" style="padding-left:20px"><span><i style="background:var(--base)"></i>dashed: official field median, 0.8015</span><span>Top-1, scale 0.73–0.81</span></div>
+    </div>
+    <div class="grow" style="display:grid;gap:12px">
+      <div class="panel fill"><div class="lbl">qwen38</div><p class="small" style="margin-top:6px;color:var(--fg)">Top-1 <b>0.8027</b> (20th of 42) · MRR <b>0.8767</b> (15th). Resampled variant 0.8019: the workaround changed nothing.</p></div>
+      <div class="panel" data-f style="border-color:var(--loss)"><div class="lbl" style="color:var(--loss)">Qwen3-VL</div><p class="small" style="margin-top:6px;color:var(--fg)">Tied on dev (−1.0, p = 0.70), 4.9 points behind officially: 1,830 vs 1,949 of 2,428. Dev couldn't test 8 options, long video or routing.</p></div>
+      <div class="panel" data-f><div class="lbl">Fusion</div><p class="small" style="margin-top:6px;color:var(--fg)">0.785, below its best member, as nested CV predicted.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>Official totals only, so comparisons are unpaired · Notebook paper §7.7</span><span>18</span></div>
+  <aside class="notes">
+    <p>Right, the honest bit. We'd been testing on 400 of our own questions the whole way through. Did any of it hold up?</p>
+    <p>For the best model, remarkably well. We said 80, it got 80.3. That's 20th of 42, right about the middle of the field, and the resampled variant matched it too.</p>
+    <p class="cue">Click</p>
+    <p>But look at the red line, because this is the part that should make you nervous. On our set, Qwen3-VL was level with the leader. Statistically we could not separate them. On the official set it finished 4.9 points behind. That's 119 more wrong answers.</p>
+    <p>Ours were four options and short clips. Theirs are mostly eight options with some very long videos. The two models came apart on exactly the dimensions we had no way to look at.</p>
+    <p class="cue">Click</p>
+    <p>And the combined run finished below its own best member, which is what the careful testing said would happen.</p>
+    <p>So even if debate had passed every test on our data, I still wouldn't stand up here and tell you it works.</p>
+  </aside>
+</section>
+
+<!-- 19 WHAT WE LEARNED -->
+<section class="slide" data-title="What we learned" data-time="45">
+  <div class="eyebrow"><span>Discussion</span></div>
+  <h2>Measure what ships, <em>with the metric that scores it</em></h2>
+  <div class="lessons">
+    <div class="panel rise" style="--d:0s"><h3>Dev transfers where the metric matches</h3><p>Task 2 Top-1: within 0.3 points. Task 1: expansion lost STS, and we optimised a mean-over-ten scorer while 2026 scores rank 1.</p></div>
+    <div class="panel rise" style="--d:.1s"><h3>Combination didn't rescue a weak panel</h3><p>Six ways of combining models across both tasks. Each lost to or tied the best single model wherever measured.</p></div>
+    <div class="panel rise" style="--d:.2s"><h3>Robustness beat capability</h3><p>The one dedicated reasoning model finished last on both tasks, on output reliability. Gemma 4 won Task 1 largely by never failing.</p></div>
+    <div class="panel rise" style="--d:.3s"><h3>Self-reported confidence was worthless</h3><p>Router: 1.0 on 96.9%. Vote counts correlated negatively with correctness. Agreement across passes was the only useful signal.</p></div>
+    <div class="panel rise" style="--d:.4s"><h3>Dev-set mismatch is the residual risk</h3><p>Short-video, four-option dev sets hid the Qwen3-VL gap that 2026 exposed.</p></div>
+    <div class="panel rise" style="--d:.5s"><h3>Gates saved compute</h3><p>Muse Glimmer's failed gate saved 16–20 GPU-hours. Nested CV refused a +2.5-point in-sample winner.</p></div>
+  </div>
+  <div class="foot"><span>Notebook paper §10</span><span>19</span></div>
+  <aside class="notes">
+    <p>The main thing: our testing predicted the official results well every time the thing we measured matched the thing they scored. Within 0.3 points on the second task.</p>
+    <p>Both of our surprises came from a mismatch. One metric we couldn't run at all, and scoring ten answers when only the first one gets read.</p>
+    <p>Combining models never beat the best single model. Not on either task, not once, across five different attempts and 781,000 searched variants.</p>
+    <p>Being reliable mattered more than being clever. The one model in our set built specifically for reasoning came last on both tasks, purely because of how often its output was unusable.</p>
+    <p>Asking a model how confident it is was useless everywhere we tried it. What did work was checking whether separate runs agreed with each other: 46% error when they disagreed, 14% when they agreed.</p>
+    <p>And writing the success criteria down in advance saved us real time. One model failed its test early and we never ran it over the full set, which is about twenty hours of GPU time we didn't spend for nothing.</p>
+  </aside>
+</section>
+
+<!-- 20 WHERE WE GOT TO, AND NEXT -->
+<section class="slide" data-title="Where we got to, and next" data-time="35">
+  <div class="eyebrow"><span>Conclusion</span></div>
+  <h2>Each next step comes from a <em>measured weakness</em></h2>
+  <ol class="next">
+    <li data-f><div>Counting<span>Every model undercounts, systematically (Qwen3.8: 43.8% error vs 16.8%). Denser frames and report-the-maximum are built, unmeasured.</span></div></li>
+    <li data-f><div>Audio evidence<span>“What can be heard” questions on video whose audio the ranker never received. CLAP option scoring is built, not yet scored against labels.</span></div></li>
+    <li data-f><div>Rank-1 selection for Task 1<span>Develop against @1; use generation log-probabilities or a trained reranker.</span></div></li>
+    <li data-f><div>Measure debate on dev<span>203 disputed queries, same gate as the single judge.</span></div></li>
+    <li data-f><div>A local STS<span>So length-oriented changes are caught before submission.</span></div></li>
+  </ol>
+  <div class="foot"><span>Notebook paper §11</span><span>20</span></div>
+  <aside class="notes">
+    <p>So. One consumer graphics card, open models, five weeks. Our best multiple-choice run landed mid-field and matched what we'd predicted it would do. On the writing task our sets of answers were competitive; our choice of which one to put first was not.</p>
+    <p class="cue">Click through the five</p>
+    <p>Five things next, and each one comes from something we watched go wrong. Counting. Audio. Picking the right answer first. Actually running that debate, which is one overnight run on a card we already own. And getting the missing metric working locally, so we stop optimising blind on it.</p>
+    <p>Thanks.</p>
+  </aside>
+</section>
+
+<!-- 21 QUESTIONS -->
+<section class="slide s-end" data-title="Questions" data-time="5">
+  <div class="eyebrow"><span>Thank you</span></div>
+  <div class="big">Questions</div>
+  <p class="sub">MC: 0.803 Top-1, 0.877 MRR, dev estimate 0.800 · AG: top-quarter Best@10, mid-field @1 · no combination beat the best single model.</p>
+  <div class="foot" style="width:100%"><span>Aakash Gupta · ThinkEvolve Consulting · [contact]</span><span>Backup slides follow</span></div>
+  <aside class="notes">
+    <p>Thank you. Happy to take questions.</p>
+    <p class="cue">Backups: O for overview. Q&amp;A prep in the script view (S).</p>
+  </aside>
+</section>
+
+<!-- B1 -->
+<section class="slide" data-title="Backup: Task 1 Best@1 vs Best@10" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span class="tag off">official 2026 · 44 runs</span></div>
+  <h2>Our candidate sets were stronger than our first choices</h2>
+  <table class="t">
+    <thead><tr><th>Run</th><th class="n">STS Best@1 → Best@10</th><th class="n">BERTScore</th><th class="n">METEOR</th></tr></thead>
+    <tbody>
+      <tr class="us"><td class="num">gemma4_run01</td><td class="n">0.457 (23) → 0.639 (9)</td><td class="n">0.889 (18) → 0.917 (9)</td><td class="n">0.176 (39) → 0.335 (23)</td></tr>
+      <tr><td class="num">gemma4_expand_run1</td><td class="n">0.423 (30) → 0.600 (14)</td><td class="n">0.886 (23) → 0.907 (23)</td><td class="n">0.214 (28) → 0.368 (13)</td></tr>
+      <tr><td class="num">fused_expan_run1</td><td class="n">0.402 (38) → 0.593 (16)</td><td class="n">0.883 (32) → 0.909 (18)</td><td class="n">0.212 (32) → 0.364 (14)</td></tr>
+      <tr><td class="num">qwen3vl_expand_run2</td><td class="n">0.362 (44) → 0.512 (39)</td><td class="n">0.880 (36) → 0.899 (36)</td><td class="n">0.168 (43) → 0.290 (37)</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Part of this is Best@10 rewarding diverse sets, which the paraphrase ensemble produces. On dev, Gemma's own vote ordered answers only +0.016 NDCG better than random (p = 0.058); a pooled Spearman near 0.03 is the noise floor.</p>
+  <div class="foot"><span>Rank among 44 runs in parentheses · Notebook paper §6.4, §6.8</span><span>B1</span></div>
+  <aside class="notes">
+    <p>For “why is your writing score mid-field?”. Our ten-answer sets are 9th of 44 on two of the three metrics. Our first answers are 18th to 23rd. Same answers, different slot.</p>
+  </aside>
+</section>
+
+<!-- B2 -->
+<section class="slide" data-title="Backup: arbitration detail" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span class="tag dev">dev 2025 · 203 disputed queries</span></div>
+  <h2>Judge arms, controls, and the two-judge split</h2>
+  <div class="row" style="gap:26px;align-items:flex-start">
+    <table class="t tight grow">
+      <thead><tr><th>Arm</th><th class="n">Correct of 203</th><th class="n">Full 400 Top-1</th></tr></thead>
+      <tbody>
+        <tr class="us"><td>Qwen3.8 alone</td><td class="n">133</td><td class="n">0.800</td></tr>
+        <tr><td>Qwen3.8 as judge</td><td class="n">132</td><td class="n">0.797</td></tr>
+        <tr><td>InternVL3.5 as judge</td><td class="n">130</td><td class="n">0.792</td></tr>
+        <tr><td>InternVL3.5, no reliability card</td><td class="n">127</td><td class="n">0.785</td></tr>
+        <tr><td>Majority vote (control)</td><td class="n">129</td><td class="n">0.790</td></tr>
+        <tr><td>Null judge (control)</td><td class="n">73</td><td class="n">0.650</td></tr>
+        <tr><td><i>Perfect adjudicator</i></td><td class="n">187</td><td class="n">0.935</td></tr>
+      </tbody>
+    </table>
+    <table class="t tight grow">
+      <thead><tr><th>Two judges</th><th class="n">n</th><th class="n">Correct</th></tr></thead>
+      <tbody>
+        <tr><td>Judges agree</td><td class="n">153</td><td class="n">112 (baseline 109)</td></tr>
+        <tr><td>Judges disagree</td><td class="n">50</td><td class="n">20 / 18; baseline 24; either 38</td></tr>
+        <tr><td>Oracle over both</td><td class="n">203</td><td class="n">150 (baseline 133)</td></tr>
+        <tr><td>Oracle, counting only</td><td class="n">38</td><td class="n">24</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small" style="color:var(--loss)">Debate was never run at scale: the Mac-hosted 27B judge could not return one answer in 30 minutes. The oracle is a ceiling, not a debate score.</p>
+  <div class="foot"><span>Notebook paper §7.6</span><span>B2</span></div>
+  <aside class="notes">
+    <p>The judge arms, the controls, and the two-judge split, in full.</p>
+    <p>If anyone quotes 0.843 back at you: that is the two-judge oracle, scaled to 400 questions. It's a ceiling for always picking the right judge. It is not a debate score.</p>
+  </aside>
+</section>
+
+<!-- B3 -->
+<section class="slide" data-title="Backup: debate vs voting at equal budget" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span>Q&amp;A</span></div>
+  <h2>Debate vs voting at a matched budget</h2>
+  <div class="row" style="gap:26px;align-items:stretch">
+    <div class="panel grow"><div class="lbl">Independent answers + vote (measured)</div><div class="mid num" style="margin-top:10px">3 calls</div><p class="small" style="margin-top:8px">per question: three option orders, Borda. Qwen3.8 this way: 0.800 dev, 0.803 official.</p></div>
+    <div class="panel grow"><div class="lbl">Debate (built, not run)</div><div class="mid num" style="margin-top:10px">≈2.8 calls</div><p class="small" style="margin-top:8px">per disputed question: 2 openings × ≈1.4 for the rebuttal rounds.</p></div>
+  </div>
+  <table class="t">
+    <thead><tr><th>On the 203 disputed dev questions</th><th class="n">Correct</th></tr></thead>
+    <tbody>
+      <tr><td>Baseline (Qwen3.8 alone)</td><td class="n">133</td></tr>
+      <tr><td>Plain majority across models</td><td class="n">129</td></tr>
+      <tr><td>Best single judge</td><td class="n">132</td></tr>
+      <tr><td>Oracle over two judges (ceiling)</td><td class="n">150</td></tr>
+    </tbody>
+  </table>
+  <div class="foot"><span>No budget-matched comparison has been run</span><span>B3</span></div>
+  <aside class="notes">
+    <p>For “debate versus voting at the same cost”. Voting is three calls a question and it's already inside every ranker. The debate is about 2.8 calls per disputed question.</p>
+    <p>We never ran the comparison, so no winner is claimed.</p>
+  </aside>
+</section>
+
+<!-- B4 -->
+<section class="slide" data-title="Backup: fusion across the field" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span class="tag off">official 2026 · totals only</span></div>
+  <h2>Across the field, fusion gained only where a team's runs were <em>close in strength</em></h2>
+  <table class="t">
+    <thead><tr><th>Team</th><th>Fusion run</th><th class="n">Top-1</th><th>Best other run</th><th class="n">Top-1</th><th class="n">Gain</th><th>Other runs</th></tr></thead>
+    <tbody>
+      <tr><td>ISU</td><td class="num">isu-mc-fusefga-v2n</td><td class="n">0.8476</td><td class="num">isu-mc-astra-v2n</td><td class="n">0.8398</td><td class="n pos">+19</td><td>close (0.840, 0.836)</td></tr>
+      <tr><td>NII_UIT</td><td class="num">NII_UIT-avg2_q38</td><td class="n">0.8431</td><td class="num">NII_UIT-huydq_qwen</td><td class="n">0.8143</td><td class="n pos">+70</td><td>members unknown</td></tr>
+      <tr><td>BiTeM</td><td class="num">BiTeM_mcfusion</td><td class="n">0.7611</td><td class="num">BiTeM_mc122b</td><td class="n">0.7657</td><td class="n neg">−11</td><td>one leader</td></tr>
+      <tr class="us"><td>Ours</td><td class="num">fused.weighted</td><td class="n">0.7846</td><td class="num">qwen38</td><td class="n">0.8027</td><td class="n neg">−44</td><td>one leader</td></tr>
+    </tbody>
+  </table>
+  <p class="small" style="color:var(--loss)">Inferred from run names only. Not yet confirmed against these teams' notebook papers. Four teams is a pattern, not a test; ISU's gain is within about one standard error.</p>
+  <div class="foot"><span>Gain in queries, of 2,428 · 42 runs from 10 teams</span><span>B4</span></div>
+  <aside class="notes">
+    <p>Going by run names only, so I may have this wrong. Teams whose runs were close in strength seem to have gained from fusion; teams with one clear leader lost. That's exactly what the wins-and-losses table predicts.</p>
+    <p>If someone from one of those teams is in the room, say so and invite the correction.</p>
+  </aside>
+</section>
+
+<!-- B5 -->
+<section class="slide" data-title="Backup: our five multiple-choice runs" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span class="tag off">official 2026</span></div>
+  <h2>Our five multiple-choice runs</h2>
+  <table class="t">
+    <thead><tr><th>Run</th><th class="n">Dev Top-1</th><th class="n">Official Top-1</th><th class="n">Rank /42</th><th class="n">MRR</th><th class="n">Rank /42</th><th class="n">2026 wall clock</th></tr></thead>
+    <tbody>
+      <tr class="us"><td class="num">qwen38</td><td class="n">0.800</td><td class="n">0.8027</td><td class="n">20</td><td class="n">0.8767</td><td class="n">15</td><td class="n">7.53 h</td></tr>
+      <tr><td class="num">qwen38.resampled</td><td class="n">—</td><td class="n">0.8019</td><td class="n">21</td><td class="n">0.8757</td><td class="n">17</td><td class="n">—</td></tr>
+      <tr><td class="num">fused.weighted</td><td class="n">0.795</td><td class="n">0.7846</td><td class="n">27</td><td class="n">0.8659</td><td class="n">22</td><td class="n">—</td></tr>
+      <tr><td class="num">qwen3vl.run</td><td class="n">0.790</td><td class="n">0.7537</td><td class="n">32</td><td class="n">0.8433</td><td class="n">32</td><td class="n">18.88 h</td></tr>
+      <tr><td class="num">internvl.run</td><td class="n">0.760</td><td class="n">0.7401</td><td class="n">33</td><td class="n">0.8355</td><td class="n">33</td><td class="n">1.99 h</td></tr>
+      <tr><td><i>field median / best</i></td><td class="n"></td><td class="n">0.8015 / 0.8476</td><td class="n"></td><td class="n">0.8665 / 0.9081</td><td class="n"></td><td class="n"></td></tr>
+    </tbody>
+  </table>
+  <p class="small">6th of 10 teams by best run. MC ranking is prefill-bound: six of eight models answer in 36–44 tokens.</p>
+  <div class="foot"><span>Notebook paper §7.7, §8</span><span>B5</span></div>
+  <aside class="notes">
+    <p>All five submitted runs, our estimate against the official number, with wall clock. The resampled variant changed nothing, exactly as our testing said.</p>
+  </aside>
+</section>
+
+<!-- B6 -->
+<section class="slide" data-title="Backup: throughput" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span><span>§8 Throughput · Task 2 · single stream</span></div>
+  <h2>MC ranking is prefill-bound</h2>
+  <table class="t tight">
+    <thead><tr><th>Model</th><th class="n">Prefill tok/s</th><th class="n">Decode tok/s</th><th class="n">Median prompt</th><th class="n">Median generated</th><th class="n">TTFT (s)</th></tr></thead>
+    <tbody>
+      <tr><td>Cosmos-Reason2-2B</td><td class="n">4,737</td><td class="n">68.6</td><td class="n">10,875</td><td class="n">37</td><td class="n">2.62</td></tr>
+      <tr><td>LLaVA-Video-7B</td><td class="n">3,264</td><td class="n">48.0</td><td class="n">6,784</td><td class="n">36</td><td class="n">2.12</td></tr>
+      <tr><td>VideoLLaMA3-7B</td><td class="n">2,613</td><td class="n">28.9</td><td class="n">4,570</td><td class="n">36</td><td class="n">1.80</td></tr>
+      <tr><td>Qwen3-VL-8B</td><td class="n">2,207</td><td class="n">40.4</td><td class="n">4,708</td><td class="n">36</td><td class="n">2.25</td></tr>
+      <tr><td>Gemma 4 12B INT4</td><td class="n">1,930</td><td class="n">26.3</td><td class="n">4,589</td><td class="n">41</td><td class="n">2.38</td></tr>
+      <tr><td>InternVL3.5-30B-A3B</td><td class="n">1,764</td><td class="n">139.3</td><td class="n">4,508</td><td class="n">44</td><td class="n">2.57</td></tr>
+      <tr><td>Qwen3.8-27B INT4 *</td><td class="n">999</td><td class="n">13.8</td><td class="n">4,761</td><td class="n">256</td><td class="n">4.91</td></tr>
+      <tr><td>Muse Glimmer 30B</td><td class="n">791</td><td class="n">45.3</td><td class="n">4,442</td><td class="n">411</td><td class="n">5.66</td></tr>
+    </tbody>
+  </table>
+  <p class="small">* Fallback configuration (Triton attention, bf16 KV) and no output schema in the bench; not the production run. KV-cache dtype not held constant.</p>
+  <div class="foot"><span>Ten real 2026 queries, 1.1–389 s of video, prefix caching defeated · Notebook paper §8</span><span>B6</span></div>
+  <aside class="notes">
+    <p>Multiple-choice ranking is prefill-bound: almost all the time goes into reading the video, not writing the answer. 7.5 hours for the best model, 18.9 for the slowest, about 2 for the fastest.</p>
+  </aside>
+</section>
+
+<!-- B7 -->
+<section class="slide" data-title="Backup: ask this of any multi-agent result" data-time="0" data-backup>
+  <div class="eyebrow"><span class="bk">Backup</span></div>
+  <h2>Disagreement usually means the question is <em>hard</em>, not that one model knows the answer</h2>
+  <ul class="pts" style="max-width:1080px">
+    <li data-f>Before building fusion or debate, compute <b>wins and losses against your leader</b> on dev. If every member loses on net, voting adds error.</li>
+    <li data-f>Combination is worth trying when agents bring <b>different evidence</b>: more frames, audio, text. More opinions over the same 16 frames did not help.</li>
+    <li data-f>Running locally made the controls free: null judges, a 781,248-fusion search, cached reruns. <b>Next:</b> debate on the 203 disputed dev questions, on the 3090, under the same gate.</li>
+  </ul>
+  <div data-f>
+    <div class="lbl" style="margin-bottom:10px">Ask of any multi-agent VLM result</div>
+    <div class="checklist"><div>Gate written first?</div><div>Null and majority controls?</div><div>Paired test?</div><div>Nested CV if searched?</div><div>Held-out confirmation?</div></div>
+  </div>
+  <div class="foot"><span>Notebook paper §10–11</span><span>B7</span></div>
+  <aside class="notes">
+    <p>If someone wants one slide to take away, it's the five checks here. Was the gate written first? Were there null and majority controls? Was there a paired test? Nested cross-validation if you searched? And a held-out confirmation?</p>
+    <p>The three points above them are the short version of the whole talk: disagreement marks a hard question rather than a recoverable one; make the wins-and-losses table before you build anything; and combining pays only when the models bring different evidence.</p>
+  </aside>
+</section>
+
+
+
+    </div>
+    <div class="overview" id="overview" hidden></div>
+  </div>
+
+  <div class="notes-panel" id="notesPanel" hidden>
+    <div class="ntext" id="ntext"></div>
+    <div class="meta">
+      <div><div class="lbl">Talk</div><div class="clock" id="clock">0:00</div><div style="margin-top:4px">of 15:00 · <span id="clockState">press T to start</span></div></div>
+      <div><div class="lbl">This slide</div><div class="slideclock" id="sclock">0:00</div><div style="margin-top:4px" id="sbudget"></div></div>
+      <div><div class="lbl">Next</div><div class="next" id="nextTitle"></div></div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button id="bPrev" aria-label="Previous">←</button>
+    <button id="bNext" aria-label="Next">→</button>
+    <span id="count" class="num">1 / 21</span>
+    <div class="progress"><i id="prog"></i></div>
+    <span class="spacer"></span>
+    <button id="bNotes" aria-pressed="false">Notes (N)</button>
+    <button id="bOver" aria-pressed="false">Overview (O)</button>
+    <button id="bScript">Script (S)</button>
+    <button id="bFull">Fullscreen (F)</button>
+    <span class="kbd-hint">T timer · B blank</span>
+  </div>
+</div>
+
+<div class="script" id="script" hidden>
+  <div class="inner">
+    <button class="close" id="scriptClose">Back to slides (Esc)</button>
+    <h1>Speaker script</h1>
+    <p class="lede">Fifteen-minute talk, both TREC 2026 VQA tasks, plus questions. Target times per slide sum to about 14:30. Plain text is what you say; cues in amber mark clicks. Q&amp;A preparation follows the script.</p>
+    <div id="scriptBody"></div>
+    <section>
+      <h2>Q&amp;A preparation</h2>
+      <dl class="qa">
+        <dt>So debate would score 0.843?</dt>
+        <dd>No. That's what you'd get if you always picked whichever judge happened to be right, which isn't something you can actually do. It's a ceiling. We never ran debate properly. Backup B2.</dd>
+        <dt>Are you saying debate doesn't work?</dt>
+        <dd>No, something narrower. On our panel, where one model is clearly ahead of the rest, nothing we measured beat it. Debate we didn't measure. With models closer together you might well get a different answer.</dd>
+        <dt>Why didn't you run it?</dt>
+        <dd>We ran out of machine, basically. The judge was hosted on a Mac and couldn't get through one question in thirty minutes. On our own card it's a single overnight run, and that's next.</dd>
+        <dt>Why is your first-task score below the median?</dt>
+        <dd>We developed against last year's scorer, which averages all ten answers, so the order never mattered and we put the effort into filling all ten slots. This year only the first one counts. Best-of-ten we're 9th of 44; first answer, 23rd. And we had no reliable way of telling which of our answers was the good one. Backup B1.</dd>
+        <dt>Why ship the rewriting if it hurt a metric?</dt>
+        <dd>It passed the test we'd written, on the metrics we could actually run: the main one up everywhere, nothing else down, and it beat the padding control. The one it hurt we couldn't compute, because that service has been offline for years. We also submitted the version without rewriting, and that's our best run on that metric.</dd>
+        <dt>Did the reranking in the first task help?</dt>
+        <dd>It moved things by a few thousandths. We can't distinguish that from noise without per-question results. We submitted it on the design rather than on a measurement, and I'd call that a mistake.</dd>
+        <dt>Why did Qwen3-VL drop 4.9 points after tying on your set?</dt>
+        <dd>Our set was four options and short clips. The official one is mostly eight options with some very long videos, and it was routed. It came apart on what we couldn't test. Official comparisons are totals only, so they're unpaired, standard error about 0.8 points a run.</dd>
+        <dt>If the answer's in the panel 93% of the time, shouldn't voting work?</dt>
+        <dd>That tells you it's in there somewhere. For voting to find it, the other models need to be right specifically where they disagree with the best one. They aren't: every one of them loses more of those than it wins.</dd>
+        <dt>The judges overruled 39 and 61 times. Weren't they doing something?</dt>
+        <dd>They were doing plenty. Just not correctly. 16 fixed and 17 broken; 24 and 27. And our random judge scored where random should, so the setup wasn't handing out free wins.</dd>
+        <dt>Then why would debate help at all?</dt>
+        <dd>It might not. Two reasons it has a chance: it sees frames and audio the panel never got, and when the two judges split, one of them is right 38 times out of 50. Whether an argument can find that one, I don't know.</dd>
+        <dt>Does combining work for other teams?</dt>
+        <dd>Possibly, and it sharpens the point. Going by run names only, so I may have this wrong: teams whose models were close in ability seem to have gained, and teams with one clear leader lost. Which is what our table predicts. If anyone here is from one of those teams, I'd like to know whether I've read it right. Backup B4.</dd>
+        <dt>Is the combined run's official loss significant?</dt>
+        <dd>Not on its own. We only have totals, no per-question results, so a proper paired test isn't possible. It's consistent with what we predicted, and that's as far as I'd go.</dd>
+        <dt>Is 150 or 400 questions enough?</dt>
+        <dd>Only for big differences. Below about four and a half points, no. Two runs answering at random differed from each other by three.</dd>
+        <dt>Was any model's confidence useful?</dt>
+        <dd>No, and we checked everywhere. One component said maximum confidence 97% of the time. Another returned zero on every single answer. What did work was agreement between independent runs: 46% error when they disagreed, 14% when they agreed. Good as a warning, useless for deciding what to do, because every other model errs on those same questions too.</dd>
+        <dt>Why did Cosmos do so badly?</dt>
+        <dd>Not its eyesight. Unusable output on 19% of questions, 45% answered with no video because of a filename bug, and it's built to pick one answer rather than rank them all, so it needed a second call on 38% of multiple-choice questions.</dd>
+        <dt>Most useful single practice?</dt>
+        <dd>Making every run count its own evidence: videos attached, fallbacks used, input sizes, position bias. That's how we caught most of the twelve silent failures.</dd>
+        <dt>Why not a bigger or hosted model?</dt>
+        <dd>The data had to stay on our machines, so open weights and local inference were a constraint. One larger model was rejected because the only practical way to run it was a hosted API. And locally, re-running costs nothing, which is what paid for all the checking and the 781,000-combination search.</dd>
+        <dt>How did a 27B model fit on 24GB?</dt>
+        <dd>Compressed to 4-bit. Windows permanently holds about 1.3GB, leaving roughly 22.7. Nothing else fits beside it, so everything loads and unloads in turn.</dd>
+        <dt>Why does every model undercount?</dt>
+        <dd>We don't know. 44% wrong on counting against 17% elsewhere, nearly always too low. Our guess is the frames miss the busiest moment. We built a fix and haven't measured it.</dd>
+        <dt>How did you handle other languages?</dt>
+        <dd>Two speech systems. One only knows five languages, and 182 of our videos are in none of them, so Hindi came back as Korean in 36 of them. For the other we sample several points through the video rather than just the opening, weighted by how long each stretch is, because otherwise silence gets confidently labelled Norwegian.</dd>
+        <dt>Can anyone reproduce this?</dt>
+        <dd>Every stage saves its results, so you can re-run any part without redoing the inference. Random seeds come from the question text itself. We have standalone versions of six of the rankers that run in Colab.</dd>
+        <dt>Is a single-GPU result relevant if you have a cluster?</dt>
+        <dd>The scores obviously are limited by the hardware. The lessons aren't. Twelve of our failures produced output that looked completely fine, and that will happen to anyone.</dd>
+        <dt>Which problem would you warn people about first?</dt>
+        <dd>The visual-detail setting that covers the whole video rather than each frame. We were sending thumbnails and had no idea.</dd>
+        <dt>What would you do differently?</dt>
+        <dd>Develop the first task against the metric that actually scores it, from day one. Get a local version of the missing metric before tuning anything for length. Make the wins-and-losses table in week one. And always do the full end-to-end rehearsal: three of our multi-hour restarts were process problems, not model problems.</dd>
+        <dt>Which model would you recommend?</dt>
+        <dd>Multiple choice, Qwen3.8 at 4-bit: 80% on ours, 80.3 official. Writing task, Gemma with the ten-separate-questions approach.</dd>
+        <dt>Will you release the code?</dt>
+        <dd>Decide before the talk. Safe answer: every stage is re-runnable from saved results, and the paper documents every check and every trap we hit. Come find me afterwards.</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const root = document.documentElement;
+  const stage = $('#stage'), wrap = $('#wrap');
+  const slides = Array.from(stage.querySelectorAll('.slide'));
+  const mainCount = slides.filter(s => !s.hasAttribute('data-backup')).length;
+
+  /* ---------- charts built from data ---------- */
+  (function(){
+    const el = $('#panelDots'); if (!el) return; const lo=.60, hi=.85;
+    const pct = v => ((v - lo) / (hi - lo) * 100).toFixed(2) + '%';
+    const rows=[['Qwen3.8-27B','INT4',.800,1],['Qwen3-VL-8B','Instruct',.790],['InternVL3.5-30B-A3B','Q4',.760],['Muse Glimmer 30B','dev only',.755],['VideoLLaMA3-7B','',.738],['Gemma 4 12B','',.733],['LLaVA-Video-7B','',.725],['Cosmos-Reason2-2B','',.650]];
+    let h='';
+    rows.forEach((r,i)=>{const d=(i*.08).toFixed(2)+'s', L=r[3]?'lead':'', c=r[3]?'color:var(--accent)':'';
+      h+=`<div class="name ${L}" style="${c}">${r[0]}${r[1]?`<small>${r[1]}</small>`:''}</div><div class="track ${L}"><span class="stem gx" style="width:${pct(r[2])};--d:${d}"></span><span class="dot pop" style="left:${pct(r[2])};--d:calc(${d} + .5s)"></span></div><div class="val ${L}" style="${c}">${r[2].toFixed(3)}</div>`;});
+    h+=`<div></div><div class="axis">${[.60,.65,.70,.75,.80,.85].map(t=>`<span style="left:${pct(t)}">${t.toFixed(2)}</span>`).join('')}</div><div></div>`;
+    el.innerHTML=h;
+  })();
+  (function(){
+    const el=$('#wl'); if(!el) return;
+    const data=[['Qwen3-VL',29,33],['InternVL3.5',25,41],['VideoLLaMA3',23,48],['LLaVA-Video',23,53],['Muse Glimmer',17,35],['Cosmos',26,86]];
+    const max=90; let h='<div></div><div class="hd l">Right where leader is wrong</div><div class="hd r">Wrong where leader is right</div>';
+    data.forEach((r,i)=>{const d=(i*0.1).toFixed(2)+'s';
+      h+=`<div class="name">${r[0]}</div><div class="l"><i class="gx" style="width:${r[1]/max*100}%;--d:${d}">${r[1]}</i></div><div class="r"><i class="gx" style="width:${r[2]/max*100}%;--d:calc(${d} + .2s)">${r[2]}</i></div>`;});
+    el.innerHTML=h;
+  })();
+  (function(){
+    const el=$('#expBars'); if(!el) return; const max=.2;
+    const data=[['Gemma 4',.148,.187,.172,'62%'],['Qwen3-VL',.053,.134,.100,'58%'],['Cosmos',.033,.076,.057,'56%']];
+    let h='';
+    data.forEach((r,i)=>{
+      const bar=(cls,v,k)=>`<div class="t ${cls}"><i class="gx" style="width:${(v/max*100).toFixed(1)}%;--d:${(i*.15+k*.08).toFixed(2)}s"></i><b style="left:${(v/max*100).toFixed(1)}%">${v.toFixed(3)}</b></div>`;
+      h+=`<div class="name">${r[0]}<small style="display:block;font:500 12px var(--f-mono);color:var(--base);margin-top:4px">C = ${r[4]} of B's gain</small></div><div class="g">${bar('a',r[1],0)}${bar('b',r[2],1)}${bar('c',r[3],2)}</div>`;
+    });
+    h+=`<div></div><div class="axis" style="grid-column:2">${[0,.05,.1,.15,.2].map(t=>`<span style="left:${t/max*100}%">${t.toFixed(2)}</span>`).join('')}</div>`;
+    el.innerHTML=h;
+  })();
+
+  // fusion slide: in-sample vs nested, rows grouped; nested rows are fragments via wrapper trick
+  (function(){
+    const el = $('#fusionDots'); if(!el) return; const lo=.74, hi=.84;
+    const pct = v => ((v - lo) / (hi - lo) * 100).toFixed(2) + '%';
+    const rows = [
+      {n:'Weighted RRF, 4 models', s:'weights fit in-sample · p = 0.86', v:.795},
+      {n:'Equal-weight, 3 models', s:'p = 0.029', v:.765, c:'var(--loss)'},
+      {n:'Best of 781,248', s:'in-sample', v:.825, c:'var(--muted)'},
+      {n:'Best of 781,248', s:'nested CV', v:.801, c:'var(--accent)', f:1},
+      {n:'Best equal-weight subset', s:'in-sample', v:.810, c:'var(--muted)'},
+      {n:'Best equal-weight subset', s:'nested CV · 0 of 20 above', v:.778, c:'var(--loss)', f:1}
+    ];
+    let h='';
+    rows.forEach((r,i)=>{
+      const d=(i*0.08).toFixed(2)+'s'; const fa = r.f ? ' data-f data-g="n"' : '';
+      h += `<div class="name"${fa} style="color:${r.c||'var(--fg)'}">${r.n}<small>${r.s}</small></div>`
+        + `<div class="track"${fa}><span class="vline" style="left:${pct(.800)}"></span>`
+        + `<span class="stem gx" style="width:${pct(r.v)};--d:${d}"></span>`
+        + `<span class="dot pop" style="left:${pct(r.v)};--d:calc(${d} + .5s);background:${r.c||'var(--muted)'}"></span></div>`
+        + `<div class="val"${fa} style="color:${r.c||'var(--fg)'}">${r.v.toFixed(3)}</div>`;
+    });
+    h += `<div></div><div class="axis">${[.74,.76,.78,.80,.82,.84].map(t=>`<span style="left:${pct(t)}">${t.toFixed(2)}</span>`).join('')}</div><div></div>`;
+    el.innerHTML = h;
+  })();
+  // judge bars (of 203)
+  (function(){
+    if(!$('#judgeBars')) return;
+    const rows=[['Qwen3.8 alone (baseline)',133,'base'],['Qwen3.8 as judge',132,'judge'],['InternVL3.5 as judge',130,'judge'],['InternVL3.5, no reliability card',127,'judge'],['Majority vote (control)',129,'ctrlb',1],['Null judge, random pick (control)',73,'ctrlb',1],['Perfect adjudicator (ceiling)',187,'ceil',1]];
+    let h='';
+    rows.forEach((r,i)=>{
+      const w=(r[1]/203*100).toFixed(2)+'%';
+      h+=`<div class="name ${r[3]?'ctrl':''}">${r[0]}</div><div class="t ${r[2]}"><span class="basebar" style="left:${(133/203*100).toFixed(2)}%"></span><i class="gx" style="width:${w};--d:${(i*.07).toFixed(2)}s"></i><b style="left:${w}">${r[1]}</b></div>`;
+    });
+    $('#judgeBars').innerHTML=h;
+    const flips=[['Qwen3.8 judge',39,16,17],['InternVL3.5 judge',61,24,27]];
+    $('#flips').innerHTML=flips.map(f=>{
+      let t=''; for(let i=0;i<f[2];i++)t+='<i class="fx"></i>'; for(let i=0;i<f[3];i++)t+='<i class="br"></i>'; for(let i=0;i<f[1]-f[2]-f[3];i++)t+='<i class="nn"></i>';
+      return `<div><div class="who">${f[0]} <span>overruled ${f[1]}× · ${f[2]} fixed · ${f[3]} broken</span></div><div class="toks" style="margin-top:8px">${t}</div></div>`;
+    }).join('');
+  })();
+
+  // two judges columns (of 50)
+  (function(){
+    if(!$('#tj')) return;
+    const c=[['',20,''],['',18,''],['',24,'base'],['',38,'or']];
+    $('#tj').innerHTML=c.map(x=>`<div class="c ${x[2]}"><b>${x[1]}</b><i style="height:${(x[1]/50*100*0.82).toFixed(1)}%"></i></div>`).join('');
+    document.querySelectorAll('#tj i').forEach((el,i)=>{el.style.animationDelay=(i*.12)+'s'});
+  })();
+  // vertical grow
+  const st=document.createElement('style'); st.textContent='.slide.active .cols .c i{animation:growY .9s cubic-bezier(.2,.7,.2,1) both}'; document.head.appendChild(st);
+
+  /* ---------- deck engine ---------- */
+  root.classList.add('builds');
+  let cur = 0, step = 0;
+  const frags = s => {
+    // group fragments that share data-g into a single step
+    const els = Array.from(s.querySelectorAll('[data-f]'));
+    const steps = []; const seen = {};
+    els.forEach(e => { const g = e.getAttribute('data-g'); if (g){ if(seen[g]==null){seen[g]=steps.length; steps.push([])} steps[seen[g]].push(e) } else steps.push([e]) });
+    return steps;
+  };
+  const slideSteps = slides.map(frags);
+
+  function fit(){
+    const r = wrap.getBoundingClientRect();
+    const s = Math.max(0.1, Math.min(r.width / 1280, r.height / 720));
+    stage.style.setProperty('--s', s.toFixed(4));
+  }
+  function applySteps(i, n){
+    slideSteps[i].forEach((grp, k) => grp.forEach(e => e.classList.toggle('shown', k < n)));
+  }
+  function show(i, atEnd){
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i !== cur || !slides[i].classList.contains('active')){
+      slides.forEach(s => s.classList.remove('active'));
+      void stage.offsetWidth;
+      slides[i].classList.add('active');
+      slideStart = Date.now();
+    }
+    cur = i; step = atEnd ? slideSteps[i].length : 0;
+    applySteps(cur, step);
+    update();
+    try { history.replaceState(null, '', '#s' + (cur + 1)); } catch(e){ location.hash = 's' + (cur + 1); }
+  }
+  function next(){
+    startClock();
+    if (step < slideSteps[cur].length){ step++; applySteps(cur, step); update(); }
+    else if (cur < slides.length - 1) show(cur + 1);
+  }
+  function prev(){
+    if (step > 0){ step--; applySteps(cur, step); update(); }
+    else if (cur > 0) show(cur - 1, true);
+  }
+
+  /* notes + clock */
+  let talkStart = null, slideStart = Date.now();
+  const fmt = ms => { const t = Math.max(0, Math.floor(ms/1000)); return Math.floor(t/60) + ':' + String(t%60).padStart(2,'0'); };
+  function startClock(){ if (!talkStart){ talkStart = Date.now(); $('#clockState').textContent = 'running · T resets'; } }
+  function tick(){
+    const c = $('#clock'); const el = talkStart ? Date.now() - talkStart : 0;
+    c.textContent = fmt(el); c.classList.toggle('over', el > 900000);
+    const budget = +slides[cur].dataset.time || 0; const se = Date.now() - slideStart;
+    const sc = $('#sclock'); sc.textContent = fmt(se); sc.classList.toggle('over', budget > 0 && se > budget*1000);
+    // planned position
+    let planned = 0; for (let k = 0; k < cur; k++) planned += (+slides[k].dataset.time || 0);
+    $('#sbudget').textContent = budget ? `budget ${fmt(budget*1000)} · plan at ${fmt(planned*1000)}` : 'backup';
+  }
+  setInterval(tick, 500);
+
+  function update(){
+    const s = slides[cur];
+    const isB = s.hasAttribute('data-backup');
+    $('#count').textContent = isB ? `Backup ${cur - mainCount + 1}` : `${cur + 1} / ${mainCount}`;
+    $('#prog').style.width = Math.min(100, (cur + 1) / mainCount * 100) + '%';
+    const n = s.querySelector('.notes');
+    $('#ntext').innerHTML = (n ? n.innerHTML : '') + (slideSteps[cur].length ? `<p class="cue">Builds: ${step} of ${slideSteps[cur].length} shown</p>` : '');
+    const nx = slides[cur + 1];
+    $('#nextTitle').textContent = nx ? nx.dataset.title : 'End';
+    document.querySelectorAll('#overview button').forEach((b, k) => b.classList.toggle('cur', k === cur));
+    tick();
+  }
+
+  /* overview */
+  const ov = $('#overview');
+  ov.innerHTML = slides.map((s, k) => {
+    const b = s.hasAttribute('data-backup');
+    return `<button data-i="${k}"><span class="on ${b?'bk':''}">${b ? 'Backup ' + (k - mainCount + 1) : 'Slide ' + (k + 1) + ' · ' + fmt((+s.dataset.time||0)*1000)}</span><span class="ot">${s.dataset.title}</span></button>`;
+  }).join('');
+  ov.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; toggleOverview(false); show(+b.dataset.i); });
+  function toggleOverview(on){ on = on ?? ov.hidden; ov.hidden = !on; $('#bOver').setAttribute('aria-pressed', on); }
+
+  /* notes */
+  function toggleNotes(on){
+    const p = $('#notesPanel'); on = on ?? p.hidden; p.hidden = !on; $('#bNotes').setAttribute('aria-pressed', on);
+    try { localStorage.setItem('npNotes', on ? '1' : '0'); } catch(e){}
+    requestAnimationFrame(fit);
+  }
+
+  /* script view */
+  $('#scriptBody').innerHTML = slides.filter(s => !s.hasAttribute('data-backup')).map((s, k) => {
+    const n = s.querySelector('.notes');
+    return `<section><div class="sh"><span>${k + 1} · ${fmt((+s.dataset.time||0)*1000)}</span><h2>${s.dataset.title}</h2></div>${n ? n.innerHTML : ''}</section>`;
+  }).join('') + slides.filter(s => s.hasAttribute('data-backup')).map((s, k) => {
+    const n = s.querySelector('.notes');
+    return `<section><div class="sh"><span>Backup ${k + 1}</span><h2>${s.dataset.title.replace('Backup: ','')}</h2></div>${n ? n.innerHTML : ''}</section>`;
+  }).join('');
+  function toggleScript(on){ const sc = $('#script'); on = on ?? sc.hidden; sc.hidden = !on; if (on) sc.scrollTop = 0; }
+
+  /* blank */
+  let blank = false;
+  function toggleBlank(){ blank = !blank; stage.style.visibility = blank ? 'hidden' : ''; }
+
+  function full(){
+    const d = document;
+    if (d.fullscreenElement) d.exitFullscreen?.().catch(()=>{});
+    else root.requestFullscreen?.().catch(()=>{});
+  }
+
+  $('#bPrev').onclick = prev; $('#bNext').onclick = next;
+  $('#bNotes').onclick = () => toggleNotes(); $('#bOver').onclick = () => toggleOverview();
+  $('#bScript').onclick = () => toggleScript(true); $('#scriptClose').onclick = () => toggleScript(false);
+  $('#bFull').onclick = full;
+
+  stage.addEventListener('click', e => {
+    if (e.target.closest('button,a')) return;
+    const r = stage.getBoundingClientRect();
+    (e.clientX - r.left) > r.width * 0.3 ? next() : prev();
+  });
+  let tx = null;
+  stage.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, {passive:true});
+  stage.addEventListener('touchend', e => { if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 40){ e.preventDefault(); dx < 0 ? next() : prev(); } tx = null; });
+
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (!$('#script').hidden){ if (k === 'Escape' || k === 's' || k === 'S') toggleScript(false); return; }
+    if (['ArrowRight','PageDown',' ','Enter'].includes(k)){ e.preventDefault(); next(); }
+    else if (['ArrowLeft','PageUp','Backspace'].includes(k)){ e.preventDefault(); prev(); }
+    else if (k === 'Home') show(0);
+    else if (k === 'End') show(mainCount - 1);
+    else if (k === 'n' || k === 'N') toggleNotes();
+    else if (k === 'o' || k === 'O' || k === 'Escape'){ if (k === 'Escape' && ov.hidden) return; toggleOverview(); }
+    else if (k === 's' || k === 'S') toggleScript(true);
+    else if (k === 'f' || k === 'F') full();
+    else if (k === 'b' || k === 'B' || k === '.') toggleBlank();
+    else if (k === 't' || k === 'T'){ talkStart = Date.now(); slideStart = Date.now(); $('#clockState').textContent = 'running · T resets'; tick(); }
+  });
+
+  window.addEventListener('resize', fit);
+  window.addEventListener('hashchange', () => { const m = /^#s(\d+)$/.exec(location.hash); if (m && +m[1] - 1 !== cur) show(+m[1] - 1); });
+
+  try { if (localStorage.getItem('npNotes') === '1') toggleNotes(true); } catch(e){}
+  const m = /^#s(\d+)$/.exec(location.hash);
+  fit(); show(m ? +m[1] - 1 : 0);
+})();
+</script>
+
+</body></html>
