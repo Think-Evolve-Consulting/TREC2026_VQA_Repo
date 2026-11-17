@@ -5,8 +5,8 @@ Task 1 (answer generation, ten ranked answers) and Task 2 (multiple-choice ranki
 Every model ran locally on one RTX 3090, served through vLLM, llama.cpp or Ollama.
 
 Presented at TREC 2026 - 18th Nov 
-[Slides for the talk](https://github.com/Think-Evolve-Consulting/TREC2026_VQA_Repo/blob/main/TREC2026_VQA_talk_merged.pdf)
-[Speaker Notes]
+
+- [Slides for the talk]([https://github.com/Think-Evolve-Consulting/TREC2026_VQA_Repo/blob/main/TREC2026_VQA_talk_merged.pdf](https://think-evolve-consulting.github.io/TREC2026_VQA_Repo/#s1))
 
 ## Layout
 
